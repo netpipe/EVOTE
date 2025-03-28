@@ -4,24 +4,24 @@
 #include <QtSql/QSqlError>
 #include <QSslSocket>
 #include <QTcpServer>
-#include <QTcpSocket>
 #include <QDebug>
 #include <QDateTime>
 #include <QHostInfo>
 #include <QCryptographicHash>
 #include <QFile>
+#include <qlist.h>
 
 QTcpServer *server;
 QList<QTcpSocket *> peers;
 
 //when broadcasting vote it might need time limit also a way to see if it got updated to a master list ?
 
-struct Peer {
+struct Peers2 {
     QString ip;
     int port;
     QString hash;
 
-    Peer(const QString& ipAddress, int p) : ip(ipAddress), port(p) {
+    Peers2(const QString& ipAddress, int p) : ip(ipAddress), port(p) {
         hash = generatePeerHash(ip, port);
     }
 
@@ -30,11 +30,11 @@ struct Peer {
     }
 };
 
-QList<Peer> peers = { 
-    Peer("192.168.1.1", 5555),
-    Peer("192.168.1.2", 5556),
-    Peer("192.168.1.3", 5557),
-    Peer("192.168.1.4", 5558)
+QList<Peers2> peers2 = {
+    Peers2("192.168.1.1", 5555),
+    Peers2("192.168.1.2", 5556),
+    Peers2("192.168.1.3", 5557),
+    Peers2("192.168.1.4", 5558)
 };
 
 
@@ -215,7 +215,7 @@ QString getLastKnownHashFromPeers() {
         hashCount[hash]++;
     }
 
-    QString mostCommonHash = hashCount.key(hashCount.values().maxKey());
+    QString mostCommonHash = 0;// hashCount.key(hashCount.values().maxKey());
     return mostCommonHash;
 }
 
@@ -254,9 +254,9 @@ void voteOnTopicWithRecovery(int topic_id, const QString &user, int vote) {
 
 void setupPeerServer() {
     server = new QTcpServer();
-    connect(server, &QTcpServer::newConnection, []() {
+    server->connect(server, &QTcpServer::newConnection, []() {
         QTcpSocket *client = server->nextPendingConnection();
-        connect(client, &QTcpSocket::readyRead, [client]() {
+        server->connect(client, &QTcpSocket::readyRead, [client]() {
             while (client->canReadLine()) {
                 QString line = QString::fromUtf8(client->readLine()).trimmed();
                 QStringList parts = line.split("|");
@@ -282,8 +282,8 @@ void setupPeerServer() {
     }
 }
 
-QList<Peer> selectRandomPeers(const QList<Peer>& allPeers, int sampleSize) {
-    QList<Peer> selectedPeers;
+    QList<Peers2> selectRandomPeers(const QList<Peers2>& allPeers, int sampleSize) {
+    QList<Peers2> selectedPeers;
     if (allPeers.isEmpty()) return selectedPeers;
 
     // Generate a secure random index list
@@ -292,22 +292,61 @@ QList<Peer> selectRandomPeers(const QList<Peer>& allPeers, int sampleSize) {
     for (int i = 0; i < sampleSize && !allPeers.isEmpty(); ++i) {
         int randomIndex = rand() % allPeers.size();
         selectedPeers.append(allPeers[randomIndex]);
-        allPeers.removeAt(randomIndex);  // Remove selected peer to avoid repetition
+    ///    allPeers.removeAt(randomIndex);  // Remove selected peer to avoid repetition
     }
 
     return selectedPeers;
 }
 
-QString getPeerVerificationHash(const QList<Peer>& selectedPeers) {
+QString getPeerVerificationHash(const QList<Peers2>& selectedPeers) {
     QStringList peerHashes;
 
-    for (const Peer& peer : selectedPeers) {
-        peerHashes.append(peer.hash);
+    for (const Peers2& peers2 : selectedPeers) {
+        peerHashes.append(peers2.hash);
     }
 
-    // Calculate an average hash or combine them for verification
-    QString combinedHashes = peerHashes.join("|");  // Join all hashes
-    return QString(QCryptographicHash::hash(combinedHashes.toUtf8(), QCryptographicHash::Sha256).toHex());
+    //put selectedPeers into peers ?
+
+   //old
+    // Randomly select a subset of peers
+    int sampleSize = qMin(5, peers.size()); // Select up to 5 peers or as many as available
+   // QList<QString> peerHashes;
+
+    for (int i = 0; i < sampleSize; ++i) {
+        // Select a random peer
+        QTcpSocket *peer = peers[qrand() % peers.size()];
+
+        // Send a request for the peer's hash (You would need a protocol to ask for this hash)
+        QString request = "HASH_REQUEST\n";
+        peer->write(request.toUtf8());
+
+        // Read response from peer
+        if (peer->waitForReadyRead(5000)) {  // 5 seconds timeout
+            QString peerHash = QString::fromUtf8(peer->readAll()).trimmed();
+            peerHashes.append(peerHash);
+        } else {
+            qDebug() << "Failed to get hash from peer.";
+        }
+    }
+
+    // Compare the hashes (average or majority)
+    if (peerHashes.isEmpty()) {
+        qDebug() << "No valid hashes retrieved from peers.";
+        return "";
+    }
+
+    // For simplicity, let's take the most common hash
+    QMap<QString, int> hashCount;
+    for (const QString &hash : peerHashes) {
+        hashCount[hash]++;
+    }
+
+    QString mostCommonHash = 0;//hashCount.key(hashCount.values().maxKey());
+
+
+
+   // QString combinedHashes = peerHashes.join("|");  // Join all hashes
+    return mostCommonHash;
 }
 
 void setupSsl() {
@@ -331,11 +370,11 @@ int main(int argc, char *argv[]) {
 // grab peer list from random people then select some of those peers at random to increase security, also it could be country and non lan based to get even more random.
 
 //while change lists grab 3 peers from each till you get like 50 or however many you can find based on expected popularity or weather fallback mode with only one or 2 can still do the job and reintegrate changes later ?
-    QList<Peer> selectedPeers = selectRandomPeers(peers, 3);
+    QList<Peers2> selectedPeers = selectRandomPeers(peers2, 3);
 
     qDebug() << "Selected Peers for Verification:";
-    for (const Peer& peer : selectedPeers) {
-        qDebug() << peer.ip << peer.port;
+    for (const Peers2& peers2 : selectedPeers) {
+        qDebug() << peers2.ip << peers2.port;
     }
 
     // Get a combined verification hash from the selected peers
