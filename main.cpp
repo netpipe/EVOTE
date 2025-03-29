@@ -16,12 +16,12 @@ QList<QTcpSocket *> peers;
 
 //when broadcasting vote it might need time limit also a way to see if it got updated to a master list ?
 
-struct Peers2 {
+struct Peer {
     QString ip;
     int port;
     QString hash;
 
-    Peers2(const QString& ipAddress, int p) : ip(ipAddress), port(p) {
+    Peer(const QString& ipAddress, int p) : ip(ipAddress), port(p) {
         hash = generatePeerHash(ip, port);
     }
 
@@ -30,11 +30,11 @@ struct Peers2 {
     }
 };
 
-QList<Peers2> peers2 = {
-    Peers2("192.168.1.1", 5555),
-    Peers2("192.168.1.2", 5556),
-    Peers2("192.168.1.3", 5557),
-    Peers2("192.168.1.4", 5558)
+QList<Peer> peers2 = {
+    Peer("192.168.1.1", 5555),
+    Peer("192.168.1.2", 5556),
+    Peer("192.168.1.3", 5557),
+    Peer("192.168.1.4", 5558)
 };
 
 
@@ -215,7 +215,7 @@ QString getLastKnownHashFromPeers() {
         hashCount[hash]++;
     }
 
-    QString mostCommonHash = 0;// hashCount.key(hashCount.values().maxKey());
+    QString mostCommonHash = 0; //hashCount.key(hashCount.values().maxKey());
     return mostCommonHash;
 }
 
@@ -269,6 +269,7 @@ void setupPeerServer() {
                         qDebug() << "Invalid peer rejected.";
                     }
                 } else if (parts.size() == 5 && parts[0] == "VOTE") {
+                    //maybe establish trust before voting somehow on busy networks.
                     voteOnTopic(parts[1].toInt(), parts[2], parts[3].toInt());
                 }
             }
@@ -282,8 +283,8 @@ void setupPeerServer() {
     }
 }
 
-    QList<Peers2> selectRandomPeers(const QList<Peers2>& allPeers, int sampleSize) {
-    QList<Peers2> selectedPeers;
+    QList<Peer> selectRandomPeers(const QList<Peer>& allPeers, int sampleSize) {
+    QList<Peer> selectedPeers;
     if (allPeers.isEmpty()) return selectedPeers;
 
     // Generate a secure random index list
@@ -292,17 +293,18 @@ void setupPeerServer() {
     for (int i = 0; i < sampleSize && !allPeers.isEmpty(); ++i) {
         int randomIndex = rand() % allPeers.size();
         selectedPeers.append(allPeers[randomIndex]);
-    ///    allPeers.removeAt(randomIndex);  // Remove selected peer to avoid repetition
+   //     allPeers.removeAt(randomIndex);  // Remove selected peer to avoid repetition
     }
 
     return selectedPeers;
 }
 
-QString getPeerVerificationHash(const QList<Peers2>& selectedPeers) {
+//testing
+QString getPeerVerificationHash(const QList<Peer>& selectedPeers) {
     QStringList peerHashes;
 
-    for (const Peers2& peers2 : selectedPeers) {
-        peerHashes.append(peers2.hash);
+    for (const Peer& peers3 : selectedPeers) {
+        peerHashes.append(peers3.hash);
     }
 
     //put selectedPeers into peers ?
@@ -370,10 +372,10 @@ int main(int argc, char *argv[]) {
 // grab peer list from random people then select some of those peers at random to increase security, also it could be country and non lan based to get even more random.
 
 //while change lists grab 3 peers from each till you get like 50 or however many you can find based on expected popularity or weather fallback mode with only one or 2 can still do the job and reintegrate changes later ?
-    QList<Peers2> selectedPeers = selectRandomPeers(peers2, 3);
+    QList<Peer> selectedPeers = selectRandomPeers(peers2, 3);
 
     qDebug() << "Selected Peers for Verification:";
-    for (const Peers2& peers2 : selectedPeers) {
+    for (const Peer& peers2 : selectedPeers) {
         qDebug() << peers2.ip << peers2.port;
     }
 
