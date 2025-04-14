@@ -14,6 +14,7 @@ class PeerNode : public QObject {
 
 public:
     PeerNode(QObject *parent = nullptr) : QObject(parent), maxPeers(5) {
+        UID="1234";
         server = new QTcpServer(this);
         connect(server, &QTcpServer::newConnection, this, &PeerNode::handleConnection);
         server->listen(QHostAddress::Any, 5555);
@@ -37,7 +38,9 @@ public:
         for (const QString &peer : connectedPeers) {
             socket->write(QString("PEER|%1\n").arg(peer).toUtf8());
         }
-        socket->write("SYNC_REQUEST\n");
+      //  socket->write("SYNC_REQUEST\n");
+        socket->write(QString("SYNC_REQUEST|%1\n").arg(UID).toUtf8());
+
     }
 
     void broadcastVote(const QString &candidate, const QString &token) {
@@ -54,9 +57,13 @@ public:
             QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
             peer->write(line.toUtf8());
         }
+
         QString hash = currentVoteHash();
-        QString time = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        peer->write(QString("SYNC_HASH|%1|%2\n").arg(time, hash).toUtf8());
+        QList<QByteArray> slices = xorSplitSecret(hash.toUtf8(), 3);
+        for (int i = 0; i < slices.size(); ++i) {
+            peer->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
+        }
+        peer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
     }
 
     void generateTokenPool(int count) {
@@ -96,6 +103,77 @@ public:
         return q.exec() && q.next() && q.value(0).toInt() == 0;
     }
 
+    QStringList exportTokensToCSV(const QString &filename) {
+        QStringList exportedTokens;
+        QFile file(filename);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << "token\n";
+
+            QSqlQuery query("SELECT token FROM tokens WHERE used = 0;");
+            QSqlQuery update;
+            update.prepare("UPDATE tokens SET used = 1 WHERE token = ?;");
+
+            while (query.next()) {
+                QString token = query.value(0).toString();
+                out << token << "\n";
+                exportedTokens << token;
+
+                update.addBindValue(token);
+                update.exec();
+                update.clear();
+            }
+
+            file.close();
+        }
+        return exportedTokens;
+    }
+
+    bool verifyVoteToken(const QString &token) {
+        QSqlQuery query;
+        query.prepare("SELECT used FROM tokens WHERE token = ?;");
+        query.addBindValue(token);
+        if (query.exec() && query.next()) {
+            return query.value(0).toInt() == 0; // true if unused
+        }
+        return false; // token doesn't exist or already used
+    }
+
+    QStringList exportVotesToCSV(const QString &filename) {
+        QStringList lines;
+        QFile file(filename);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << "candidate,token\n";
+
+            QSqlQuery query("SELECT candidate, token FROM votes;");
+            while (query.next()) {
+                QString line = QString("%1,%2").arg(query.value(0).toString(), query.value(1).toString());
+                out << line << "\n";
+                lines << line;
+            }
+
+            file.close();
+        }
+        return lines;
+    }
+
+    QString getUnusedToken() {
+        QSqlQuery query("SELECT tokens FROM tokens WHERE used = 0 LIMIT 1;");
+        if (query.next()) {
+            QString token = query.value(0).toString();
+
+            QSqlQuery update;
+            update.prepare("UPDATE tokens SET used = 1 WHERE token = ?;");
+            update.addBindValue(token);
+            update.exec();
+
+            return token;
+        }
+        return QString(); // no available token
+    }
+
+
 private slots:
     void handleConnection() {
         QTcpSocket *client = server->nextPendingConnection();
@@ -113,11 +191,15 @@ private slots:
             } else if (parts.size() == 2 && parts[0] == "PEER") {
                 QStringList hostPort = parts[1].split(":");
                 if (hostPort.size() == 2) connectToPeer(hostPort[0], hostPort[1].toInt());
-            } else if (line == "SYNC_REQUEST") {
+            } else if (parts[0] == "SYNC_REQUEST" && parts.size() == 2) {
+                QString peerUid = parts[1];
+                qDebug() << "Received SYNC request from peer UID:" << peerUid;
                 syncVotes(socket);
             } else if (parts.size() == 3 && parts[0] == "SYNC_HASH") {
                 futureHashes[parts[1]].insert(parts[2]);
                 invalidHashCounts[parts[2]]++;
+            } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
+            hashSlices[parts[1].toInt()] = QByteArray::fromHex(parts[2].toUtf8());
             }
         }
     }
@@ -137,55 +219,15 @@ private slots:
     }
 
     void performSync() {
-        QMap<QString, int> voteCount;
-        for (const QString &voteLine : receivedVotes) {
-            QStringList parts = voteLine.split("|");
-            if (parts.size() == 3 && parts[0] == "VOTE") {
-                voteCount[voteLine]++;
-            }
-        }
-        for (auto it = voteCount.begin(); it != voteCount.end(); ++it) {
-            if (it.value() >= 2) {
-                QStringList parts = it.key().split("|");
-                handleVote(parts[1], parts[2]);
-            }
-        }
-        receivedVotes.clear();
-
-        QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        if (futureHashes.contains(now)) {
-            QMap<QString, int> hashCount;
-            for (const QString &hash : futureHashes[now]) {
-                hashCount[hash]++;
-            }
-            QString current = currentVoteHash();
-            int bestCount = 0;
-            QString bestHash;
-            for (auto it = hashCount.begin(); it != hashCount.end(); ++it) {
-                if (it.value() > bestCount) {
-                    bestCount = it.value();
-                    bestHash = it.key();
-                }
-            }
-            if (bestCount >= 2) {
-                if (bestHash == current) {
-                    qDebug() << "Future hash verified at" << now;
-                } else {
-                    qWarning() << "MISMATCHED hash at" << now << "Expected:" << bestHash << "Local:" << current;
-                }
+        if (hashSlices.size() == 3) {
+            QList<QByteArray> slices = { hashSlices[0], hashSlices[1], hashSlices[2] };
+            QByteArray reconstructed = xorJoinSecret(slices);
+            if (reconstructed == currentVoteHash().toUtf8()) {
+                qDebug() << "Sync verification passed.";
             } else {
-                qWarning() << "Low consensus hash warning at" << now << hashCount;
+                qDebug() << "WARNING: Sync hash mismatch.";
             }
-            // Avoid rebroadcasting bad hashes
-            for (auto it = invalidHashCounts.begin(); it != invalidHashCounts.end();) {
-                if (it.value() > 3) {
-                    qWarning() << "Ignoring bad hash due to excessive failures:" << it.key();
-                    it = invalidHashCounts.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-            futureHashes.remove(now);
+            hashSlices.clear();
         }
     }
 
@@ -198,6 +240,32 @@ private slots:
         return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
+    QList<QByteArray> xorSplitSecret(const QByteArray &secret, int n) {
+        QList<QByteArray> parts;
+        int len = secret.size();
+        for (int i = 0; i < n - 1; ++i) {
+            QByteArray randPart;
+            for (int j = 0; j < len; ++j)
+                randPart.append(QRandomGenerator::global()->generate() & 0xFF);
+            parts.append(randPart);
+        }
+        QByteArray last = secret;
+        for (const QByteArray &p : parts)
+            for (int i = 0; i < len; ++i)
+                last[i] = last[i] ^ p[i];
+        parts.append(last);
+        return parts;
+    }
+
+    QByteArray xorJoinSecret(const QList<QByteArray> &parts) {
+        if (parts.isEmpty()) return {};
+        QByteArray result = parts[0];
+        for (int i = 1; i < parts.size(); ++i)
+            for (int j = 0; j < result.size(); ++j)
+                result[j] = result[j] ^ parts[i][j];
+        return result;
+    }
+
 private:
     QTcpServer *server;
     QList<QTcpSocket *> peers;
@@ -206,7 +274,9 @@ private:
     QSet<QString> receivedVotes;
     QMap<QString, QSet<QString>> futureHashes;
     QMap<QString, int> invalidHashCounts;
+    QMap<int, QByteArray> hashSlices;
     QTimer *syncTimer;
+    QString UID;
 };
 
 class VotingApp : public QWidget {
