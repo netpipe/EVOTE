@@ -53,6 +53,13 @@ public:
     }
 
     void syncVotes(QTcpSocket *requestingPeer) {
+
+        QSqlQuery q1("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
+        if (q1.next()) {
+            QString genesisHash = q1.value(0).toString();
+            requestingPeer->write(QString("GENESIS_HASH|%1\n").arg(genesisHash).toUtf8());
+        }
+
         QSqlQuery q("SELECT candidate, token FROM votes;");
         while (q.next()) {
             QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
@@ -107,6 +114,18 @@ public:
     }
 
     void generateTokenPool(int count) {
+        const QString genesisMarker = "GENESIS";
+        QString tokenHash = hashToken("genesis_seed_token");
+
+        QSqlQuery check("SELECT COUNT(*) FROM votes;");
+        if (check.next() && check.value(0).toInt() == 0) {
+            QSqlQuery insert;
+            insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
+            insert.addBindValue(genesisMarker);
+            insert.addBindValue(tokenHash);
+            insert.exec();
+        }
+
         QFile file("tokens.csv");
         if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             QTextStream out(&file);
@@ -221,6 +240,18 @@ private slots:
                     hashSlices[index] = slice;
                 }
             }
+            if (parts[0] == "GENESIS_HASH" && parts.size() == 2) {
+                QString incomingHash = parts[1];
+                QSqlQuery q("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
+                if (q.next()) {
+                    QString localHash = q.value(0).toString();
+                    if (localHash != incomingHash) {
+                        qDebug() << " Genesis hash mismatch. Possible fork or unauthorized database.";
+                        socket->disconnectFromHost();  // or flag the peer
+                    }
+                }
+            }
+
 
         }
     }
