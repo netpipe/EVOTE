@@ -48,6 +48,7 @@ public:
         for (QTcpSocket *peer : peers) {
             peer->write(message.toUtf8());
         }
+        qDebug() << "voting";
         handleVote(candidate, token);
     }
 
@@ -85,15 +86,44 @@ public:
     }
 
 
-    void generateTokenPool(int count) {
-        QSqlQuery query;
-        for (int i = 0; i < count; ++i) {
+    QString generateTokenPool2() {
+      //  QSqlQuery query;
+       // for (int i = 0; i < count; ++i) {
             QString raw = QString::number(QRandomGenerator::global()->generate64());
             QString hash = QString(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex());
-            query.prepare("INSERT INTO tokens (token, used) VALUES (?, 0);");
-            query.addBindValue(hash);
-            query.exec();
+         //   query.prepare("INSERT INTO tokens (token, used) VALUES (?, 0);");
+          //  query.addBindValue(hash);
+       //     query.exec();
+      //  }
+            return hash;
+    }
+
+    bool isValidToken(const QString &token) {
+        QString hash = hashToken(token);
+        QSqlQuery q;
+        q.prepare("SELECT used FROM tokens WHERE token_hash = ?;");
+        q.addBindValue(hash);
+        return q.exec() && q.next() && q.value(0).toInt() == 0;
+    }
+
+    void generateTokenPool(int count) {
+        QFile file("tokens.csv");
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            QTextStream out(&file);
+            for (int i = 0; i < count; ++i) {
+                QString token = generateTokenPool2();//QUuid::createUuid().toString(QUuid::WithoutBraces);
+                QString tokenHash = hashToken(token);
+                QSqlQuery q;
+                q.prepare("INSERT OR IGNORE INTO tokens (token_hash, used) VALUES (?, 0);");
+                q.addBindValue(tokenHash);
+                q.exec();
+                out << token << ",\n";
+            }
         }
+    }
+
+    QString hashToken(const QString &token) {
+        return QString(QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex());
     }
 
     void setupDatabase() {
@@ -102,8 +132,8 @@ public:
         db.open();
         QSqlQuery query;
         query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE);");
-        query.exec("CREATE TABLE IF NOT EXISTS tokens (token TEXT UNIQUE, used INTEGER);");
-        query.exec("CREATE TABLE IF NOT EXISTS votes (candidate TEXT, token TEXT UNIQUE);");
+        query.exec("CREATE TABLE IF NOT EXISTS tokens (token_hash TEXT UNIQUE, used INTEGER);");
+        query.exec("CREATE TABLE IF NOT EXISTS votes (candidate TEXT, token_hash TEXT UNIQUE);");
     }
 
     QStringList getCandidates() {
@@ -113,49 +143,6 @@ public:
             list << query.value(0).toString();
         }
         return list;
-    }
-
-    bool isValidToken(const QString &token) {
-        QSqlQuery q;
-        q.prepare("SELECT used FROM tokens WHERE token = ?;");
-        q.addBindValue(token);
-        return q.exec() && q.next() && q.value(0).toInt() == 0;
-    }
-
-    QStringList exportTokensToCSV(const QString &filename) {
-        QStringList exportedTokens;
-        QFile file(filename);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&file);
-            out << "token\n";
-
-            QSqlQuery query("SELECT token FROM tokens WHERE used = 0;");
-            QSqlQuery update;
-            update.prepare("UPDATE tokens SET used = 1 WHERE token = ?;");
-
-            while (query.next()) {
-                QString token = query.value(0).toString();
-                out << token << "\n";
-                exportedTokens << token;
-
-                update.addBindValue(token);
-                update.exec();
-                update.clear();
-            }
-
-            file.close();
-        }
-        return exportedTokens;
-    }
-
-    bool verifyVoteToken(const QString &token) {
-        QSqlQuery query;
-        query.prepare("SELECT used FROM tokens WHERE token = ?;");
-        query.addBindValue(token);
-        if (query.exec() && query.next()) {
-            return query.value(0).toInt() == 0; // true if unused
-        }
-        return false; // token doesn't exist or already used
     }
 
     QStringList exportVotesToCSV(const QString &filename) {
@@ -238,19 +225,22 @@ private slots:
         }
     }
 
+
     void handleVote(const QString &candidate, const QString &token) {
+        QString hash = hashToken(token);
         if (!isValidToken(token)) return;
         QSqlQuery insert;
-        insert.prepare("INSERT INTO votes (candidate, token) VALUES (?, ?);");
+        insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
         insert.addBindValue(candidate);
-        insert.addBindValue(token);
+        insert.addBindValue(hash);
         if (insert.exec()) {
             QSqlQuery mark;
-            mark.prepare("UPDATE tokens SET used = 1 WHERE token = ?;");
-            mark.addBindValue(token);
+            mark.prepare("UPDATE tokens SET used = 1 WHERE token_hash = ?;");
+            mark.addBindValue(hash);
             mark.exec();
         }
     }
+
 
     void performSync() {
         if (hashSlices.size() == 3) {
@@ -263,15 +253,6 @@ private slots:
             }
             hashSlices.clear();
         }
-    }
-
-    QString currentVoteHash() {
-        QSqlQuery q("SELECT candidate, token FROM votes ORDER BY candidate, token;");
-        QByteArray data;
-        while (q.next()) {
-            data.append(q.value(0).toString() + q.value(1).toString());
-        }
-        return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
     QList<QByteArray> xorSplitSecret(const QByteArray &secret, int n) {
@@ -298,6 +279,15 @@ private slots:
             for (int j = 0; j < result.size(); ++j)
                 result[j] = result[j] ^ parts[i][j];
         return result;
+    }
+
+    QString currentVoteHash() {
+        QSqlQuery q("SELECT candidate, token_hash FROM votes ORDER BY candidate, token_hash;");
+        QByteArray data;
+        while (q.next()) {
+            data.append(q.value(0).toString() + q.value(1).toString());
+        }
+        return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
 public:
