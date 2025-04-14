@@ -1,29 +1,22 @@
-// Decentralized Voting App with Candidate Selector, Peer Limit, Vote Sync, Peer Verification, and Future Hash Check + Hash Warning System
+// Decentralized Voting App with Peer Exchange (PEX)
 #include <QApplication>
 #include <QtWidgets>
 #include <QtNetwork>
 #include <QtSql>
 #include <QCryptographicHash>
 #include <QSet>
-#include <QRandomGenerator>
-#include <QTimer>
-#include <QDateTime>
 
 class PeerNode : public QObject {
     Q_OBJECT
 
 public:
-    PeerNode(QObject *parent = nullptr) : QObject(parent), maxPeers(5) {
+    PeerNode(QObject *parent = nullptr) : QObject(parent) {
         server = new QTcpServer(this);
         connect(server, &QTcpServer::newConnection, this, &PeerNode::handleConnection);
         server->listen(QHostAddress::Any, 5555);
-        syncTimer = new QTimer(this);
-        connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
-        syncTimer->start(10000); // Synchronize every 10 seconds
     }
 
     void connectToPeer(const QString &host, int port = 5555) {
-        if (peers.size() >= maxPeers) return;
         QString address = QString("%1:%2").arg(host).arg(port);
         if (connectedPeers.contains(address)) return;
 
@@ -34,10 +27,10 @@ public:
         peers.append(socket);
         connectedPeers.insert(address);
 
+        // Send our known peers
         for (const QString &peer : connectedPeers) {
             socket->write(QString("PEER|%1\n").arg(peer).toUtf8());
         }
-        socket->write("SYNC_REQUEST\n");
     }
 
     void broadcastVote(const QString &candidate, const QString &token) {
@@ -45,18 +38,7 @@ public:
         for (QTcpSocket *peer : peers) {
             peer->write(message.toUtf8());
         }
-        handleVote(candidate, token);
-    }
-
-    void syncVotes(QTcpSocket *peer) {
-        QSqlQuery q("SELECT candidate, token FROM votes;");
-        while (q.next()) {
-            QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
-            peer->write(line.toUtf8());
-        }
-        QString hash = currentVoteHash();
-        QString time = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        peer->write(QString("SYNC_HASH|%1|%2\n").arg(time, hash).toUtf8());
+        handleVote(candidate, token); // Also store locally
     }
 
     void generateTokenPool(int count) {
@@ -109,21 +91,21 @@ private slots:
             QString line = socket->readLine().trimmed();
             QStringList parts = line.split("|");
             if (parts.size() == 3 && parts[0] == "VOTE") {
-                receivedVotes.insert(line);
+                handleVote(parts[1], parts[2]);
             } else if (parts.size() == 2 && parts[0] == "PEER") {
                 QStringList hostPort = parts[1].split(":");
-                if (hostPort.size() == 2) connectToPeer(hostPort[0], hostPort[1].toInt());
-            } else if (line == "SYNC_REQUEST") {
-                syncVotes(socket);
-            } else if (parts.size() == 3 && parts[0] == "SYNC_HASH") {
-                futureHashes[parts[1]].insert(parts[2]);
-                invalidHashCounts[parts[2]]++;
+                if (hostPort.size() == 2) {
+                    QString host = hostPort[0];
+                    int port = hostPort[1].toInt();
+                    connectToPeer(host, port);
+                }
             }
         }
     }
 
     void handleVote(const QString &candidate, const QString &token) {
         if (!isValidToken(token)) return;
+
         QSqlQuery insert;
         insert.prepare("INSERT INTO votes (candidate, token) VALUES (?, ?);");
         insert.addBindValue(candidate);
@@ -136,77 +118,10 @@ private slots:
         }
     }
 
-    void performSync() {
-        QMap<QString, int> voteCount;
-        for (const QString &voteLine : receivedVotes) {
-            QStringList parts = voteLine.split("|");
-            if (parts.size() == 3 && parts[0] == "VOTE") {
-                voteCount[voteLine]++;
-            }
-        }
-        for (auto it = voteCount.begin(); it != voteCount.end(); ++it) {
-            if (it.value() >= 2) {
-                QStringList parts = it.key().split("|");
-                handleVote(parts[1], parts[2]);
-            }
-        }
-        receivedVotes.clear();
-
-        QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        if (futureHashes.contains(now)) {
-            QMap<QString, int> hashCount;
-            for (const QString &hash : futureHashes[now]) {
-                hashCount[hash]++;
-            }
-            QString current = currentVoteHash();
-            int bestCount = 0;
-            QString bestHash;
-            for (auto it = hashCount.begin(); it != hashCount.end(); ++it) {
-                if (it.value() > bestCount) {
-                    bestCount = it.value();
-                    bestHash = it.key();
-                }
-            }
-            if (bestCount >= 2) {
-                if (bestHash == current) {
-                    qDebug() << "Future hash verified at" << now;
-                } else {
-                    qWarning() << "MISMATCHED hash at" << now << "Expected:" << bestHash << "Local:" << current;
-                }
-            } else {
-                qWarning() << "Low consensus hash warning at" << now << hashCount;
-            }
-            // Avoid rebroadcasting bad hashes
-            for (auto it = invalidHashCounts.begin(); it != invalidHashCounts.end();) {
-                if (it.value() > 3) {
-                    qWarning() << "Ignoring bad hash due to excessive failures:" << it.key();
-                    it = invalidHashCounts.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-            futureHashes.remove(now);
-        }
-    }
-
-    QString currentVoteHash() {
-        QSqlQuery q("SELECT candidate, token FROM votes ORDER BY candidate, token;");
-        QByteArray data;
-        while (q.next()) {
-            data.append(q.value(0).toString() + q.value(1).toString());
-        }
-        return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
-    }
-
 private:
     QTcpServer *server;
     QList<QTcpSocket *> peers;
     QSet<QString> connectedPeers;
-    int maxPeers;
-    QSet<QString> receivedVotes;
-    QMap<QString, QSet<QString>> futureHashes;
-    QMap<QString, int> invalidHashCounts;
-    QTimer *syncTimer;
 };
 
 class VotingApp : public QWidget {
@@ -222,17 +137,13 @@ public:
 
         QVBoxLayout *layout = new QVBoxLayout(this);
 
-        candidateBox = new QComboBox;
-        candidateBox->addItems(peer->getCandidates());
-
-        QPushButton *refreshCandidates = new QPushButton("Refresh Candidates");
         QPushButton *addCandidate = new QPushButton("Add Candidate");
         QPushButton *generateTokens = new QPushButton("Generate Tokens");
         QPushButton *voteButton = new QPushButton("Vote");
         QPushButton *connectBtn = new QPushButton("Connect to Peer");
 
-        newCandidateInput = new QLineEdit;
-        newCandidateInput->setPlaceholderText("New Candidate Name");
+        candidateInput = new QLineEdit;
+        candidateInput->setPlaceholderText("Candidate Name");
 
         tokenInput = new QLineEdit;
         tokenInput->setPlaceholderText("Vote Token");
@@ -240,27 +151,20 @@ public:
         peerInput = new QLineEdit;
         peerInput->setPlaceholderText("Peer IP Address");
 
-        layout->addWidget(candidateBox);
-        layout->addWidget(newCandidateInput);
+        layout->addWidget(candidateInput);
         layout->addWidget(tokenInput);
         layout->addWidget(peerInput);
-        layout->addWidget(refreshCandidates);
         layout->addWidget(addCandidate);
         layout->addWidget(generateTokens);
         layout->addWidget(voteButton);
         layout->addWidget(connectBtn);
 
-        connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
-            candidateBox->clear();
-            candidateBox->addItems(peer->getCandidates());
-        });
-
         connect(addCandidate, &QPushButton::clicked, this, [=]() {
-            QString name = newCandidateInput->text();
+            QString name = candidateInput->text();
             QSqlQuery q;
             q.prepare("INSERT INTO candidates (name) VALUES (?);");
             q.addBindValue(name);
-            if (q.exec()) candidateBox->addItem(name);
+            q.exec();
         });
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
@@ -268,7 +172,7 @@ public:
         });
 
         connect(voteButton, &QPushButton::clicked, this, [=]() {
-            peer->broadcastVote(candidateBox->currentText(), tokenInput->text());
+            peer->broadcastVote(candidateInput->text(), tokenInput->text());
         });
 
         connect(connectBtn, &QPushButton::clicked, this, [=]() {
@@ -278,8 +182,7 @@ public:
 
 private:
     PeerNode *peer;
-    QComboBox *candidateBox;
-    QLineEdit *newCandidateInput, *tokenInput, *peerInput;
+    QLineEdit *candidateInput, *tokenInput, *peerInput;
 };
 
 int main(int argc, char *argv[]) {
