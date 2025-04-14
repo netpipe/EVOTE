@@ -51,20 +51,39 @@ public:
         handleVote(candidate, token);
     }
 
-    void syncVotes(QTcpSocket *peer) {
+    void syncVotes(QTcpSocket *requestingPeer) {
         QSqlQuery q("SELECT candidate, token FROM votes;");
         while (q.next()) {
             QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
-            peer->write(line.toUtf8());
+            requestingPeer->write(line.toUtf8());
         }
 
         QString hash = currentVoteHash();
         QList<QByteArray> slices = xorSplitSecret(hash.toUtf8(), 3);
-        for (int i = 0; i < slices.size(); ++i) {
-            peer->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
+
+        if (peers.size() < 3) {
+            qWarning() << "Not enough peers to distribute hash slices securely.";
+            // fallback: send all slices to the same peer (or skip)
+            for (int i = 0; i < slices.size(); ++i)
+                requestingPeer->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
+            return;
         }
-        peer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
+
+        // Randomly assign each slice to a different peer
+        QList<QTcpSocket*> selectedPeers;
+        while (selectedPeers.size() < 3) {
+            QTcpSocket *peer = peers.at(QRandomGenerator::global()->bounded(peers.size()));
+            if (!selectedPeers.contains(peer)) selectedPeers << peer;
+        }
+
+        for (int i = 0; i < slices.size(); ++i) {
+            selectedPeers[i]->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
+        }
+
+        // Inform the requesting peer of sync time
+        requestingPeer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
     }
+
 
     void generateTokenPool(int count) {
         QSqlQuery query;
@@ -186,9 +205,10 @@ private slots:
         while (socket->canReadLine()) {
             QString line = socket->readLine().trimmed();
             QStringList parts = line.split("|");
-            if (parts.size() == 3 && parts[0] == "VOTE") {
-                receivedVotes.insert(line);
-            } else if (parts.size() == 2 && parts[0] == "PEER") {
+           // if (parts.size() == 3 && parts[0] == "VOTE") {
+           //     receivedVotes.insert(line);
+           // } else
+            if (parts.size() == 2 && parts[0] == "PEER") {
                 QStringList hostPort = parts[1].split(":");
                 if (hostPort.size() == 2) connectToPeer(hostPort[0], hostPort[1].toInt());
             } else if (parts[0] == "SYNC_REQUEST" && parts.size() == 2) {
@@ -198,9 +218,23 @@ private slots:
             } else if (parts.size() == 3 && parts[0] == "SYNC_HASH") {
                 futureHashes[parts[1]].insert(parts[2]);
                 invalidHashCounts[parts[2]]++;
-            } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
-            hashSlices[parts[1].toInt()] = QByteArray::fromHex(parts[2].toUtf8());
             }
+
+            if (parts[0] == "VOTE" && parts.size() == 3) {
+                QString key = parts[1] + "|" + parts[2]; // candidate|token
+                receivedVoteSources[key].insert(socket->peerAddress().toString());
+                if (receivedVoteSources[key].size() >= 3) {
+                    handleVote(parts[1], parts[2]); // Only accept after 3 peers agree
+                }
+            } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
+                int index = parts[1].toInt();
+                QByteArray slice = QByteArray::fromHex(parts[2].toUtf8());
+                sliceVotes[index][slice]++;
+                if (sliceVotes[index][slice] >= 2) { // e.g., 2+ peers agree on this slice
+                    hashSlices[index] = slice;
+                }
+            }
+
         }
     }
 
@@ -266,6 +300,9 @@ private slots:
         return result;
     }
 
+public:
+    QMap<QString, QSet<QString>> receivedVoteSources;
+    QMap<int, QMap<QByteArray, int>> sliceVotes; // slice index -> hash -> count
 private:
     QTcpServer *server;
     QList<QTcpSocket *> peers;
@@ -275,6 +312,8 @@ private:
     QMap<QString, QSet<QString>> futureHashes;
     QMap<QString, int> invalidHashCounts;
     QMap<int, QByteArray> hashSlices;
+
+
     QTimer *syncTimer;
     QString UID;
 };
@@ -319,6 +358,15 @@ public:
         layout->addWidget(generateTokens);
         layout->addWidget(voteButton);
         layout->addWidget(connectBtn);
+
+
+        QTimer *cleanupTimer = new QTimer(this);
+        connect(cleanupTimer, &QTimer::timeout, this, [=]() {
+            peer->receivedVoteSources.clear();
+            peer->sliceVotes.clear();
+        });
+        cleanupTimer->start(300000); // Clear every 5 minutes
+
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
             candidateBox->clear();
