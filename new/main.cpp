@@ -34,7 +34,7 @@ public:
         connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
         peers.append(socket);
         connectedPeers.insert(address);
-
+     savePeersToFile();
         for (const QString &peer : connectedPeers) {
             socket->write(QString("PEER|%1\n").arg(peer).toUtf8());
         }
@@ -54,12 +54,6 @@ public:
 
     void syncVotes(QTcpSocket *requestingPeer) {
 
-        QSqlQuery q1("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
-        if (q1.next()) {
-            QString genesisHash = q1.value(0).toString();
-            requestingPeer->write(QString("GENESIS_HASH|%1\n").arg(genesisHash).toUtf8());
-        }
-
         QSqlQuery q("SELECT candidate, token FROM votes;");
         while (q.next()) {
             QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
@@ -77,6 +71,12 @@ public:
             return;
         }
 
+        QSqlQuery q1("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
+        if (q1.next()) {
+            QString genesisHash = q1.value(0).toString();
+            requestingPeer->write(QString("GENESIS_HASH|%1\n").arg(genesisHash).toUtf8());
+        }
+
         // Randomly assign each slice to a different peer
         QList<QTcpSocket*> selectedPeers;
         while (selectedPeers.size() < 3) {
@@ -87,6 +87,8 @@ public:
         for (int i = 0; i < slices.size(); ++i) {
             selectedPeers[i]->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
         }
+
+
 
         // Inform the requesting peer of sync time
         requestingPeer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
@@ -114,17 +116,9 @@ public:
     }
 
     void generateTokenPool(int count) {
-        const QString genesisMarker = "GENESIS";
+        const QString genesisMarker = UID; //"GENESIS";
         QString tokenHash = hashToken("genesis_seed_token");
 
-        QSqlQuery check("SELECT COUNT(*) FROM votes;");
-        if (check.next() && check.value(0).toInt() == 0) {
-            QSqlQuery insert;
-            insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
-            insert.addBindValue(genesisMarker);
-            insert.addBindValue(tokenHash);
-            insert.exec();
-        }
 
         QFile file("tokens.csv");
         if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -138,6 +132,17 @@ public:
                 q.exec();
                 out << token << ",\n";
             }
+            out << "GENESIS:" << genesisMarker << ",\n";
+        }
+
+
+        QSqlQuery check("SELECT COUNT(*) FROM votes;");
+        if (check.next() && check.value(0).toInt() == 0) {
+            QSqlQuery insert;
+            insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
+            insert.addBindValue(genesisMarker);
+            insert.addBindValue(tokenHash);
+            insert.exec();
         }
     }
 
@@ -321,6 +326,38 @@ private slots:
         return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
+    void savePeersToFile() {
+        QFile file("peers.txt");
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            QTextStream out(&file);
+            for (const QString &addr : connectedPeers)
+                out << addr << "\n";
+        }
+    }
+
+    void loadPeersFromFile() {
+        QFile file("peers.txt");
+        if (file.open(QIODevice::ReadOnly)) {
+            QStringList lines;
+            QTextStream in(&file);
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (!line.isEmpty() && !connectedPeers.contains(line)) {
+                    lines.append(line);
+                }
+            }
+
+            // Shuffle to avoid same peer order on every startup
+            std::shuffle(lines.begin(), lines.end(), QRandomGenerator::global()->generate());
+
+            for (const QString &line : lines) {
+                QStringList hostPort = line.split(":");
+                if (hostPort.size() == 2)
+                    connectToPeer(hostPort[0], hostPort[1].toInt());
+            }
+        }
+    }
+
 public:
     QMap<QString, QSet<QString>> receivedVoteSources;
     QMap<int, QMap<QByteArray, int>> sliceVotes; // slice index -> hash -> count
@@ -349,7 +386,7 @@ public:
 
         peer = new PeerNode(this);
         peer->setupDatabase();
-
+loadPeersFromFile();
         QVBoxLayout *layout = new QVBoxLayout(this);
 
         candidateBox = new QComboBox;
