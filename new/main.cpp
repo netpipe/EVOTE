@@ -34,7 +34,7 @@ public:
         connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
         peers.append(socket);
         connectedPeers.insert(address);
-     savePeersToFile();
+        savePeersToFile();
         for (const QString &peer : connectedPeers) {
             socket->write(QString("PEER|%1\n").arg(peer).toUtf8());
         }
@@ -203,6 +203,40 @@ public:
         return QString(); // no available token
     }
 
+    void savePeersToFile() {
+        QFile file("peers.txt");
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            QTextStream out(&file);
+            for (const QString &addr : connectedPeers)
+                out << addr << "\n";
+        }
+    }
+
+    void loadPeersFromFile() {
+        QFile file("peers.txt");
+        if (file.open(QIODevice::ReadOnly)) {
+            QStringList lines;
+            QTextStream in(&file);
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (!line.isEmpty() && !connectedPeers.contains(line)) {
+                    lines.append(line);
+                }
+            }
+
+            auto rng = QRandomGenerator::global(); // This is the engine
+            std::shuffle(lines.begin(), lines.end(), *rng);
+
+            // Shuffle to avoid same peer order on every startup
+           // std::shuffle(lines.begin(), lines.end(), QRandomGenerator::global()->generate());
+
+            for (const QString &line : lines) {
+                QStringList hostPort = line.split(":");
+                if (hostPort.size() == 2)
+                    connectToPeer(hostPort[0], hostPort[1].toInt());
+            }
+        }
+    }
 
 private slots:
     void handleConnection() {
@@ -326,38 +360,6 @@ private slots:
         return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
-    void savePeersToFile() {
-        QFile file("peers.txt");
-        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            QTextStream out(&file);
-            for (const QString &addr : connectedPeers)
-                out << addr << "\n";
-        }
-    }
-
-    void loadPeersFromFile() {
-        QFile file("peers.txt");
-        if (file.open(QIODevice::ReadOnly)) {
-            QStringList lines;
-            QTextStream in(&file);
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (!line.isEmpty() && !connectedPeers.contains(line)) {
-                    lines.append(line);
-                }
-            }
-
-            // Shuffle to avoid same peer order on every startup
-            std::shuffle(lines.begin(), lines.end(), QRandomGenerator::global()->generate());
-
-            for (const QString &line : lines) {
-                QStringList hostPort = line.split(":");
-                if (hostPort.size() == 2)
-                    connectToPeer(hostPort[0], hostPort[1].toInt());
-            }
-        }
-    }
-
 public:
     QMap<QString, QSet<QString>> receivedVoteSources;
     QMap<int, QMap<QByteArray, int>> sliceVotes; // slice index -> hash -> count
@@ -386,7 +388,7 @@ public:
 
         peer = new PeerNode(this);
         peer->setupDatabase();
-loadPeersFromFile();
+        peer->loadPeersFromFile();
         QVBoxLayout *layout = new QVBoxLayout(this);
 
         candidateBox = new QComboBox;
