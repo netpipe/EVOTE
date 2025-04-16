@@ -146,6 +146,32 @@ public:
         }
     }
 
+    bool transferVote(const QString &fromCandidate, const QString &toCandidate, const QString &token) {
+        QString hash = hashToken(token);
+
+        // Check ownership
+        QSqlQuery check;
+        check.prepare("SELECT 1 FROM votes WHERE candidate = ? AND token_hash = ?;");
+        check.addBindValue(fromCandidate);
+        check.addBindValue(hash);
+        if (!check.exec() || !check.next()) {
+            qDebug() << "Token not owned by" << fromCandidate;
+            return false;
+        }
+
+        // Perform transfer
+        QSqlQuery update;
+        update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
+        update.addBindValue(toCandidate);
+        update.addBindValue(hash);
+        if (update.exec()) {
+            qDebug() << "Transferred token to" << toCandidate;
+            return true;
+        }
+
+        return false;
+    }
+
     QString hashToken(const QString &token) {
         return QString(QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex());
     }
@@ -290,6 +316,12 @@ private slots:
                     }
                 }
             }
+            else if (parts[0] == "TRANSFER" && parts.size() == 3) {
+                QString from = parts[1];
+                QString to = parts[2];
+                QString token = parts[3];
+                transferVote(from, to, token);
+            }
 
 
         }
@@ -426,6 +458,9 @@ public:
             peer->sliceVotes.clear();
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
+
+      //  peer->transferVote("Alice", "Bob", "some-token-here");
+
 
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
