@@ -8,6 +8,7 @@
 #include <QRandomGenerator>
 #include <QTimer>
 #include <QDateTime>
+#include <qaesencryption.h>
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -146,7 +147,38 @@ public:
         }
     }
 
-    void handleTransfer(const QString &token, const QString &receiverWallet, const QString &ownershipHash) {
+    QString encryptCandidate(const QString &candidate, const QString &walletID) {
+        QByteArray key = QCryptographicHash::hash(walletID.toUtf8(), QCryptographicHash::Sha256).left(16); // AES-128
+        QByteArray iv = QCryptographicHash::hash("some-static-or-random-IV", QCryptographicHash::Sha256).left(16);
+
+        QByteArray plain = candidate.toUtf8();
+        QByteArray cipher;
+
+        QAESEncryption encryption(QAESEncryption::AES_128, QAESEncryption::CBC);
+        cipher = encryption.encode(plain, key, iv);
+        return cipher.toBase64();
+    }
+
+    QString decryptCandidate(const QString &encrypted, const QString &walletID) {
+        QByteArray key = QCryptographicHash::hash(walletID.toUtf8(), QCryptographicHash::Sha256).left(16);
+        QByteArray iv = QCryptographicHash::hash("some-static-or-random-IV", QCryptographicHash::Sha256).left(16);
+
+        QByteArray cipher = QByteArray::fromBase64(encrypted.toUtf8());
+        QAESEncryption encryption(QAESEncryption::AES_128, QAESEncryption::CBC);
+        QByteArray plain = encryption.decode(cipher, key, iv);
+        return QString::fromUtf8(plain).trimmed();
+    }
+
+
+    QString encryptOwnership(const QString &walletSecret) {
+        return QString(QCryptographicHash::hash(("owned" + walletSecret).toUtf8(), QCryptographicHash::Sha256).toHex());
+    }
+
+    bool verifyOwnership(const QString &candidateField, const QString &walletSecret) {
+        return candidateField == encryptOwnership(walletSecret);
+    }
+
+    void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
         QString tokenHash = hashToken(token);
 
         QSqlQuery check;
@@ -154,7 +186,27 @@ public:
         check.addBindValue(tokenHash);
         if (!check.exec() || !check.next()) return;
 
-        QString senderWallet = check.value(0).toString();
+        QString currentEncryptedOwner = check.value(0).toString();
+        if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
+
+        QString newEncryptedOwner = encryptOwnership(receiverSecret);
+        QSqlQuery update;
+        update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
+        update.addBindValue(newEncryptedOwner);
+        update.addBindValue(tokenHash);
+        update.exec();
+    }
+
+
+    void handleTransfer2(const QString &token, const QString &receiverWallet, const QString &ownershipHash) {
+        QString tokenHash = hashToken(token);
+
+        QSqlQuery check;
+        check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
+        check.addBindValue(tokenHash);
+        if (!check.exec() || !check.next()) return;
+
+        QString  senderWallet = check.value(0).toString();
         QString computedOwnership = QString(QCryptographicHash::hash((senderWallet + tokenHash).toUtf8(), QCryptographicHash::Sha256).toHex());
 
         if (computedOwnership != ownershipHash) {
@@ -163,7 +215,8 @@ public:
         }
 
         QSqlQuery update;
-        update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
+        update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
+        //update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
         update.addBindValue(receiverWallet);
         update.addBindValue(tokenHash);
         update.exec();
