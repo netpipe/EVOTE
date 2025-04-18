@@ -25,7 +25,7 @@ HEADERS += \
 
 FORMS += \
 
-LIBS += -lssl -lcrypto
+LIBS +=
 
 
 # Default rules for deployment.

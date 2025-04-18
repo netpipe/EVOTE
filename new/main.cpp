@@ -468,9 +468,20 @@ public:
         QPushButton *generateTokens = new QPushButton("Generate Tokens");
         QPushButton *voteButton = new QPushButton("Vote");
         QPushButton *connectBtn = new QPushButton("Connect to Peer");
+                QPushButton *transferBtn = new QPushButton("Transfer");
 
         newCandidateInput = new QLineEdit;
         newCandidateInput->setPlaceholderText("New Candidate Name");
+
+        QSplitter *splitter = new QSplitter;
+        QSplitter *splitter2 = new QSplitter;
+       QLineEdit *Toaddressedit = new QLineEdit;
+      QLineEdit *Fromaddressedit = new QLineEdit;
+
+      QLabel *Tolbl = new QLabel;
+            QLabel *Fromlbl = new QLabel;
+            Tolbl->setText("To Address");
+            Fromlbl->setText("From Address");
 
         tokenInput = new QLineEdit;
         tokenInput->setPlaceholderText("Vote Token");
@@ -481,6 +492,13 @@ public:
         layout->addWidget(candidateBox);
         layout->addWidget(newCandidateInput);
         layout->addWidget(tokenInput);
+        splitter2->addWidget(Fromlbl);
+        splitter2->addWidget(Fromaddressedit);
+        layout->addWidget(splitter2);
+        splitter->addWidget(Tolbl);
+        splitter->addWidget(Toaddressedit);
+        layout->addWidget(splitter);
+        layout->addWidget(transferBtn);
         layout->addWidget(peerInput);
         layout->addWidget(refreshCandidates);
         layout->addWidget(addCandidate);
@@ -496,8 +514,10 @@ public:
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
-      //  peer->transferVote("Alice", "Bob", "some-token-here");
 
+        connect(generateTokens, &QPushButton::clicked, this, [=]() {
+             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text());;
+        });
 
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
