@@ -187,37 +187,20 @@ public:
         if (!check.exec() || !check.next()) return;
 
         QString currentEncryptedOwner = check.value(0).toString();
-        if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
+       // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
-        QString newEncryptedOwner = encryptOwnership(receiverSecret);
-        QSqlQuery update;
-        update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
-        update.addBindValue(newEncryptedOwner);
-        update.addBindValue(tokenHash);
-        update.exec();
-    }
+     //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
+        QString computedOwnership = encryptCandidate(senderSecret + token,UID);
 
-
-    void handleTransfer2(const QString &token, const QString &receiverWallet, const QString &ownershipHash) {
-        QString tokenHash = hashToken(token);
-
-        QSqlQuery check;
-        check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
-        check.addBindValue(tokenHash);
-        if (!check.exec() || !check.next()) return;
-
-        QString  senderWallet = check.value(0).toString();
-        QString computedOwnership = QString(QCryptographicHash::hash((senderWallet + tokenHash).toUtf8(), QCryptographicHash::Sha256).toHex());
-
-        if (computedOwnership != ownershipHash) {
+        if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
         }
 
+        QString newEncryptedOwner = encryptCandidate(receiverSecret + token,UID);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
-        //update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
-        update.addBindValue(receiverWallet);
+        update.addBindValue(newEncryptedOwner);
         update.addBindValue(tokenHash);
         update.exec();
     }
