@@ -146,31 +146,29 @@ public:
         }
     }
 
-    bool transferVote(const QString &fromCandidate, const QString &toCandidate, const QString &token) {
-        QString hash = hashToken(token);
+    void handleTransfer(const QString &token, const QString &receiverWallet, const QString &ownershipHash) {
+        QString tokenHash = hashToken(token);
 
-        // Check ownership
         QSqlQuery check;
-        check.prepare("SELECT 1 FROM votes WHERE candidate = ? AND token_hash = ?;");
-        check.addBindValue(fromCandidate);
-        check.addBindValue(hash);
-        if (!check.exec() || !check.next()) {
-            qDebug() << "Token not owned by" << fromCandidate;
-            return false;
+        check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
+        check.addBindValue(tokenHash);
+        if (!check.exec() || !check.next()) return;
+
+        QString senderWallet = check.value(0).toString();
+        QString computedOwnership = QString(QCryptographicHash::hash((senderWallet + tokenHash).toUtf8(), QCryptographicHash::Sha256).toHex());
+
+        if (computedOwnership != ownershipHash) {
+            qDebug() << " Ownership verification failed.";
+            return;
         }
 
-        // Perform transfer
         QSqlQuery update;
-        update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
-        update.addBindValue(toCandidate);
-        update.addBindValue(hash);
-        if (update.exec()) {
-            qDebug() << "Transferred token to" << toCandidate;
-            return true;
-        }
-
-        return false;
+        update.prepare("UPDATE votes SET candidate = ?, timestamp = CURRENT_TIMESTAMP WHERE token_hash = ?;");
+        update.addBindValue(receiverWallet);
+        update.addBindValue(tokenHash);
+        update.exec();
     }
+
 
     QString hashToken(const QString &token) {
         return QString(QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex());
@@ -291,7 +289,7 @@ private slots:
                 invalidHashCounts[parts[2]]++;
             }
 
-            if (parts[0] == "VOTE" && parts.size() == 3) {
+           else if (parts[0] == "VOTE" && parts.size() == 3) {
                 QString key = parts[1] + "|" + parts[2]; // candidate|token
                 receivedVoteSources[key].insert(socket->peerAddress().toString());
                 if (receivedVoteSources[key].size() >= 3) {
@@ -305,7 +303,7 @@ private slots:
                     hashSlices[index] = slice;
                 }
             }
-            if (parts[0] == "GENESIS_HASH" && parts.size() == 2) {
+            else if (parts[0] == "GENESIS_HASH" && parts.size() == 2) {
                 QString incomingHash = parts[1];
                 QSqlQuery q("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
                 if (q.next()) {
@@ -320,7 +318,10 @@ private slots:
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
-                transferVote(from, to, token);
+             //   transferVote(from, to, token);
+            }
+            else if (parts[0] == "TRANSFER" && parts.size() == 4) {
+                handleTransfer(parts[1], parts[2], parts[3]);
             }
 
 
