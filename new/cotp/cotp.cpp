@@ -16,7 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#define NO_OPENSSL
+//#define NO_OPENSSL
 #ifndef NO_OPENSSL
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
