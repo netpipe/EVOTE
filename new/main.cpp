@@ -53,6 +53,12 @@ public:
         handleVote(candidate, token);
     }
 
+    void syncVotesToAllPeers() {
+        for (QTcpSocket* peer : peers) {
+            syncVotes(peer);
+        }
+    }
+
     void syncVotes(QTcpSocket *requestingPeer) {
 
         QSqlQuery q("SELECT candidate, token FROM votes;");
@@ -179,7 +185,7 @@ public:
     }
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
-        QString tokenHash = hashToken(token);
+        QString tokenHash = token;//hashToken(token);
 
         QSqlQuery check;
         check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
@@ -378,6 +384,7 @@ private slots:
             mark.addBindValue(hash);
             mark.exec();
         }
+        syncVotesToAllPeers();
     }
 
 
