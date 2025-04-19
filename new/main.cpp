@@ -9,6 +9,9 @@
 #include <QTimer>
 #include <QDateTime>
 #include <qaesencryption.h>
+#include "cotp/cotp.hpp"
+
+
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -192,6 +195,7 @@ public:
     bool verifyOwnership(const QString &candidateField, const QString &walletSecret) {
         return candidateField == encryptOwnership(walletSecret);
     }
+
 
     QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
         QString ott = QString(QCryptographicHash::hash(
@@ -390,40 +394,38 @@ private slots:
                     }
                 }
             }
-            else if (parts[0] == "TRANSFER" && parts.size() == 3) {
+            else if (parts[0] == "TRANSFER" && parts.size() == 4) {
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
+
              //   transferVote(from, to, token);
-            }
-            else if (parts[0] == "TRANSFER" && parts.size() == 4) {
-                QString encryptedCandidate = parts[1];
-                QString tokenHash = parts[2];
-                QString ott = parts[3];
-
-                if (oneTimeTokens.contains(ott) && ottExpiry[ott] > QDateTime::currentDateTimeUtc()) {
-                    auto [walletID, originalToken] = oneTimeTokens[ott];
-                    if (originalToken == tokenHash) {
-                        // Example decryption logic, if needed
-                        // QString candidate = decryptCandidate(encryptedCandidate, walletID);
-
-                        qDebug() << "✅ One-Time Token verified, processing transfer for token:" << tokenHash;
-
-                        // Apply transfer logic here, e.g.:
-                        handleVote(walletID, tokenHash,ott); // or replace walletID with decryptedCandidate
-                      //   transferVote(from, to, token);
-                    }
-                    oneTimeTokens.remove(ott);
-                    ottExpiry.remove(ott);
-                } else {
-                    qDebug() << "❌ Invalid or expired OTT.";
-                }
             }
 
 
         }
     }
 
+    QStringList findMyVotes(const QString &walletID, const QByteArray &aesKey, const QByteArray &aesIV) {
+        QSqlQuery q("SELECT candidate, token_hash FROM votes;");
+        QStringList myTokens;
+
+        while (q.next()) {
+            QString encCandidate = q.value(0).toString();
+            QString tokenHash = q.value(1).toString();
+
+            // Decrypt candidate field
+          //  QByteArray decrypted = decryptCandidate(encCandidate, aesKey); // You’ll define this
+         //   QString decryptedText = QString::fromUtf8(decrypted);
+
+            // Check if it matches walletID
+          //  if (decryptedText.startsWith(walletID + ":")) {
+          //      myTokens.append(tokenHash); // or store whole record
+          //  }
+        }
+
+        return myTokens;
+    }
 
     void handleVote(const QString &candidate, const QString &token,QString ott) {
         QString hash = hashToken(token);
