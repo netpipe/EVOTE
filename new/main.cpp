@@ -403,7 +403,7 @@ private slots:
     QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded)
 
     // Create the TOTP instance
-    TOTP totp(sharedSecret);
+    TOTP totp(sharedSecret,SHA256);
 
     // Generate the TOTP code
     QString generatedCode = totp.generateTOTP();

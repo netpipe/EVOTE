@@ -7,11 +7,19 @@
 #include <QCryptographicHash>
 #include <QtGlobal>
 
+enum HashAlgorithm {
+    SHA1,
+    SHA256,
+    SHA512
+};
+
 class TOTP
 {
 public:
     // Constructor that takes the secret key (shared)
-    TOTP(const QString &sharedSecret);
+    TOTP(const QString &sharedSecret, HashAlgorithm algorithm = SHA1);
+    HashAlgorithm m_algorithm;
+
 
     // Generates the TOTP code
     QString generateTOTP() const;
@@ -24,7 +32,7 @@ private:
     const int m_timeStep = 30;  // The time step (in seconds)
 
     // Helper method to compute HMAC-SHA1
-    QByteArray computeHMACSHA1(const QByteArray &key, const QByteArray &message) const;
+    QByteArray computeHMAC(const QByteArray &key, const QByteArray &message) const;
 
     // Helper method to convert QByteArray to integer
     quint32 toUInt32(const QByteArray &data) const;

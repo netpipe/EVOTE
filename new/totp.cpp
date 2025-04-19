@@ -4,10 +4,13 @@
 #include <QCryptographicHash>
 #include <QtGlobal>
 #include <QDebug>
+HashAlgorithm m_algorithm;
 
-TOTP::TOTP(const QString &sharedSecret) : m_sharedSecret(sharedSecret)
+TOTP::TOTP(const QString &sharedSecret, HashAlgorithm algorithm)
+    : m_sharedSecret(sharedSecret), m_algorithm(algorithm)
 {
 }
+
 
 QString TOTP::generateTOTP() const
 {
@@ -21,7 +24,7 @@ QString TOTP::generateTOTP() const
     timeArray.append(reinterpret_cast<const char*>(&timeCounter), sizeof(timeCounter));
 
     // Compute HMAC-SHA1 hash of the time counter with the secret key
-    QByteArray hmac = computeHMACSHA1(m_sharedSecret.toUtf8(), timeArray);
+    QByteArray hmac = computeHMAC(m_sharedSecret.toUtf8(), timeArray);
 
     // Apply dynamic truncation to get the final 6-digit code
     quint32 code = toUInt32(hmac.mid(hmac.length() - 4)) & 0x7FFFFFFF;
@@ -39,30 +42,44 @@ bool TOTP::verifyTOTP(const QString &code) const
     // Compare the generated code with the provided code
     return generatedCode == code;
 }
-
-QByteArray TOTP::computeHMACSHA1(const QByteArray &key, const QByteArray &message) const
+QByteArray TOTP::computeHMAC(const QByteArray &key, const QByteArray &message) const
 {
-    // HMAC-SHA1 using Qt's QCryptographicHash
-    QCryptographicHash hash(QCryptographicHash::Sha1);
-    int blockSize = 64; // HMAC block size
+    QCryptographicHash::Algorithm algo;
 
-    // Prepare the key (pad if smaller than block size)
+    switch (m_algorithm) {
+        case SHA256:
+            algo = QCryptographicHash::Sha256;
+            break;
+        case SHA512:
+            algo = QCryptographicHash::Sha512;
+            break;
+        case SHA1:
+        default:
+            algo = QCryptographicHash::Sha1;
+            break;
+    }
+
+    QCryptographicHash hash(algo);
+    int blockSize = (algo == QCryptographicHash::Sha512) ? 128 : 64;
+
     QByteArray keyBytes = key;
+    if (keyBytes.size() > blockSize) {
+        hash.addData(keyBytes);
+        keyBytes = hash.result();
+        hash.reset();
+    }
     if (keyBytes.size() < blockSize) {
         keyBytes.append(QByteArray(blockSize - keyBytes.size(), '\0'));
     }
 
-    // Inner pad (ipad) and outer pad (opad)
     QByteArray ipad = keyBytes;
     QByteArray opad = keyBytes;
 
-    for (int i = 0; i < ipad.size(); ++i) {
+    for (int i = 0; i < blockSize; ++i) {
         ipad[i] = static_cast<char>(static_cast<quint8>(ipad[i]) ^ 0x36);
         opad[i] = static_cast<char>(static_cast<quint8>(opad[i]) ^ 0x5C);
     }
 
-
-    // Apply the HMAC algorithm
     hash.addData(ipad);
     hash.addData(message);
     QByteArray innerHash = hash.result();
@@ -73,6 +90,7 @@ QByteArray TOTP::computeHMACSHA1(const QByteArray &key, const QByteArray &messag
 
     return hash.result();
 }
+
 
 quint32 TOTP::toUInt32(const QByteArray &data) const
 {
