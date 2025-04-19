@@ -198,26 +198,16 @@ public:
 
 
     QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
-        QString ott = QString(QCryptographicHash::hash(
-            (walletID + tokenHash + QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8(),
-            QCryptographicHash::Sha256).toHex().left(16)); // short OTT
 
-        oneTimeTokens[ott] = qMakePair(walletID, tokenHash);
-        ottExpiry[ott] = QDateTime::currentDateTimeUtc().addSecs(30); // valid 30 seconds
+        QString sharedSecret = tokenHash; // Example shared secret (Base32 encoded)
 
-        return ott;
-    }
+        // Create the TOTP instance
+        TOTP totp(sharedSecret,SHA256);
 
-    void cleanExpiredOTTs() {
-        QDateTime now = QDateTime::currentDateTimeUtc();
-        for (auto it = ottExpiry.begin(); it != ottExpiry.end(); ) {
-            if (it.value() < now) {
-                oneTimeTokens.remove(it.key());
-                it = ottExpiry.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        // Generate the TOTP code
+        QString generatedCode = totp.generateTOTP();
+        qDebug() << "Generated TOTP Code: " << generatedCode;
+        return generatedCode;
     }
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
@@ -525,9 +515,6 @@ private:
     QMap<QString, QSet<QString>> futureHashes;
     QMap<QString, int> invalidHashCounts;
     QMap<int, QByteArray> hashSlices;
-    QMap<QString, QPair<QString, QString>> oneTimeTokens; // key = OTT, value = <walletID, tokenHash>
-    QMap<QString, QDateTime> ottExpiry;                   // optional: expiry tracking
-
 
     QTimer *syncTimer;
     QString UID;
@@ -623,7 +610,6 @@ public:
         connect(cleanupTimer, &QTimer::timeout, this, [=]() {
             peer->receivedVoteSources.clear();
             peer->sliceVotes.clear();
-            peer->cleanExpiredOTTs();
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
