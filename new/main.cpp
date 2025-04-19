@@ -209,6 +209,8 @@ public:
         update.addBindValue(newEncryptedOwner);
         update.addBindValue(tokenHash);
         update.exec();
+
+        syncVotesToAllPeers();
     }
 
 
@@ -482,6 +484,9 @@ public:
 
         QSplitter *splitter = new QSplitter;
         QSplitter *splitter2 = new QSplitter;
+        QSplitter *splitter3 = new QSplitter;
+        QSplitter *splitter4 = new QSplitter;
+        QSplitter *splitter5 = new QSplitter;
        QLineEdit *Toaddressedit = new QLineEdit;
       QLineEdit *Fromaddressedit = new QLineEdit;
 
@@ -505,13 +510,24 @@ public:
         splitter->addWidget(Tolbl);
         splitter->addWidget(Toaddressedit);
         layout->addWidget(splitter);
-        layout->addWidget(transferBtn);
-        layout->addWidget(peerInput);
-        layout->addWidget(refreshCandidates);
-        layout->addWidget(addCandidate);
+
+      splitter4->addWidget(transferBtn);
+        splitter4->addWidget(voteButton);
+ layout->addWidget(splitter4);
+
+splitter3->addWidget(connectBtn);
+      //  layout->addWidget(transferBtn);
+              splitter3->addWidget(peerInput);
+
+        layout->addWidget(splitter3);
+        splitter5->addWidget(refreshCandidates);
+        splitter5->addWidget(addCandidate);
+        layout->addWidget(splitter5);
         layout->addWidget(generateTokens);
-        layout->addWidget(voteButton);
-        layout->addWidget(connectBtn);
+
+
+
+
 
 
         QTimer *cleanupTimer = new QTimer(this);
