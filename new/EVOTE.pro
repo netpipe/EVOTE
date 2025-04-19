@@ -16,22 +16,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    cotp/cotp.cpp \
-    cotp/otp_factory.cpp \
-    cotp/otp_uri.cpp \
     main.cpp \
+    totp.cpp \
     qaesencryption.cpp
 
 HEADERS += \
-    cotp/cotp.hpp \
-    cotp/otp_factory.hpp \
-    cotp/otp_uri.hpp \
+  totp.h \
     qaesencryption.h
 
 
 FORMS += \
 
-LIBS += -L/Users/macbook2015/Desktop/brew/lib -lssl -lcrypto
+LIBS += -L/Users/macbook2015/Desktop/brew/lib
 
 INCLUDEPATH += /Users/macbook2015/Desktop/brew/include /Users/macbook2015/Desktop/brew/lib
 

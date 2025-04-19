@@ -9,7 +9,7 @@
 #include <QTimer>
 #include <QDateTime>
 #include <qaesencryption.h>
-#include "cotp/cotp.hpp"
+#include "totp.h"
 
 
 
@@ -399,42 +399,20 @@ private slots:
                 QString to = parts[2];
                 QString token = parts[3];
 
-                const int INTERVAL	= 30;
-                const int DIGITS	= 6;
+    // Secret key (typically, you generate this and share it between server and client)
+    QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded)
 
-                // Base32 secret to utilize
-            //	std::string BASE32_SECRET = "JBSWY3DPEHPK3PXP";
-                std::string BASE32_SECRET = "THISISASECRET345";
-    // Generate a TOTP (time-based OTP) for the current time
-auto totp = cotp::TOTP(BASE32_SECRET, "SHA1", DIGITS, INTERVAL);
-  //  std::string otp = totp.generate(); // Generate OTP based on current time
+    // Create the TOTP instance
+    TOTP totp(sharedSecret);
 
- //   std::cout << "Generated OTP: " << otp << std::endl;
+    // Generate the TOTP code
+    QString generatedCode = totp.generateTOTP();
+    qDebug() << "Generated TOTP Code: " << generatedCode;
 
-auto totp_code_now = totp.code();
-//cout << "TOTP Generated: `" << totp_code_now << "`" << endl;
+    // Verify the TOTP code (you would typically compare the input from the user)
+    bool isValid = totp.verifyTOTP(generatedCode);
+    qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
 
-
-// TOTP at
-auto totp_code_at = totp.code_at(1, 0);
-//cout << "TOTP Generated: `" << totp_code_at << "`" << endl;
-
-// Do a verification for a hardcoded code
-
-// Won't succeed, this code is for a timeblock far into the past
-//auto totp_verify_1 = totp.verify(576203, time(NULL), 4);
-
-// Will succeed, timeblock 0 for JBSWY3DPEHPK3PXP == 282760
-auto totp_verify_2 = totp.verify(282760, 0, 4);
-
-    // Verify the OTP (For demonstration, we will check if the OTP generated is valid)
-    bool isValid = totp_verify_2; // Verify if OTP is valid
-
-    if (isValid) {
-  //      std::cout << "OTP is valid!" << std::endl;
-    } else {
-   //     std::cout << "Invalid OTP!" << std::endl;
-    }
 
              //   transferVote(from, to, token);
             }
