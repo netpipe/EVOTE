@@ -50,7 +50,7 @@ public:
             peer->write(message.toUtf8());
         }
         qDebug() << "voting";
-        handleVote(candidate, token);
+        handleVote(candidate, token,generateOneTimeToken(UID,token));
     }
 
     void syncVotesToAllPeers() {
@@ -101,6 +101,15 @@ public:
         requestingPeer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
     }
 
+    QString generateRandomToken(int length = 12) {
+        const QString chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        QString token;
+        for (int i = 0; i < length; ++i) {
+            int index = QRandomGenerator::global()->bounded(chars.length());
+            token += chars.at(index);
+        }
+        return token;
+    }
 
     QString generateTokenPool2() {
       //  QSqlQuery query;
@@ -182,6 +191,29 @@ public:
 
     bool verifyOwnership(const QString &candidateField, const QString &walletSecret) {
         return candidateField == encryptOwnership(walletSecret);
+    }
+
+    QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
+        QString ott = QString(QCryptographicHash::hash(
+            (walletID + tokenHash + QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8(),
+            QCryptographicHash::Sha256).toHex().left(16)); // short OTT
+
+        oneTimeTokens[ott] = qMakePair(walletID, tokenHash);
+        ottExpiry[ott] = QDateTime::currentDateTimeUtc().addSecs(30); // valid 30 seconds
+
+        return ott;
+    }
+
+    void cleanExpiredOTTs() {
+        QDateTime now = QDateTime::currentDateTimeUtc();
+        for (auto it = ottExpiry.begin(); it != ottExpiry.end(); ) {
+            if (it.value() < now) {
+                oneTimeTokens.remove(it.key());
+                it = ottExpiry.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
@@ -337,7 +369,7 @@ private slots:
                 QString key = parts[1] + "|" + parts[2]; // candidate|token
                 receivedVoteSources[key].insert(socket->peerAddress().toString());
                 if (receivedVoteSources[key].size() >= 3) {
-                    handleVote(parts[1], parts[2]); // Only accept after 3 peers agree
+                    handleVote(parts[1], parts[2],generateOneTimeToken(UID,parts[2])); // Only accept after 3 peers agree
                 }
             } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
                 int index = parts[1].toInt();
@@ -365,7 +397,27 @@ private slots:
              //   transferVote(from, to, token);
             }
             else if (parts[0] == "TRANSFER" && parts.size() == 4) {
-                handleTransfer(parts[1], parts[2], parts[3]);
+                QString encryptedCandidate = parts[1];
+                QString tokenHash = parts[2];
+                QString ott = parts[3];
+
+                if (oneTimeTokens.contains(ott) && ottExpiry[ott] > QDateTime::currentDateTimeUtc()) {
+                    auto [walletID, originalToken] = oneTimeTokens[ott];
+                    if (originalToken == tokenHash) {
+                        // Example decryption logic, if needed
+                        // QString candidate = decryptCandidate(encryptedCandidate, walletID);
+
+                        qDebug() << "✅ One-Time Token verified, processing transfer for token:" << tokenHash;
+
+                        // Apply transfer logic here, e.g.:
+                        handleVote(walletID, tokenHash,ott); // or replace walletID with decryptedCandidate
+                      //   transferVote(from, to, token);
+                    }
+                    oneTimeTokens.remove(ott);
+                    ottExpiry.remove(ott);
+                } else {
+                    qDebug() << "❌ Invalid or expired OTT.";
+                }
             }
 
 
@@ -373,12 +425,18 @@ private slots:
     }
 
 
-    void handleVote(const QString &candidate, const QString &token) {
+    void handleVote(const QString &candidate, const QString &token,QString ott) {
         QString hash = hashToken(token);
         if (!isValidToken(token)) return;
+
+            QString finalCandidate = candidate;
+            if (!ott.isEmpty()) {
+                finalCandidate = encryptCandidate(candidate, ott);
+            }
+
         QSqlQuery insert;
         insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
-        insert.addBindValue(candidate);
+        insert.addBindValue(finalCandidate);
         insert.addBindValue(hash);
         if (insert.exec()) {
             QSqlQuery mark;
@@ -450,6 +508,8 @@ private:
     QMap<QString, QSet<QString>> futureHashes;
     QMap<QString, int> invalidHashCounts;
     QMap<int, QByteArray> hashSlices;
+    QMap<QString, QPair<QString, QString>> oneTimeTokens; // key = OTT, value = <walletID, tokenHash>
+    QMap<QString, QDateTime> ottExpiry;                   // optional: expiry tracking
 
 
     QTimer *syncTimer;
@@ -477,7 +537,9 @@ public:
         QPushButton *generateTokens = new QPushButton("Generate Tokens");
         QPushButton *voteButton = new QPushButton("Vote");
         QPushButton *connectBtn = new QPushButton("Connect to Peer");
-                QPushButton *transferBtn = new QPushButton("Transfer");
+        QPushButton *Generatewalletbtn = new QPushButton("Generate Wallet");
+
+        QPushButton *transferBtn = new QPushButton("Transfer");
 
         newCandidateInput = new QLineEdit;
         newCandidateInput->setPlaceholderText("New Candidate Name");
@@ -487,13 +549,15 @@ public:
         QSplitter *splitter3 = new QSplitter;
         QSplitter *splitter4 = new QSplitter;
         QSplitter *splitter5 = new QSplitter;
-       QLineEdit *Toaddressedit = new QLineEdit;
-      QLineEdit *Fromaddressedit = new QLineEdit;
+        QSplitter *splitter6 = new QSplitter;
 
-      QLabel *Tolbl = new QLabel;
-            QLabel *Fromlbl = new QLabel;
-            Tolbl->setText("To Address");
-            Fromlbl->setText("From Address");
+        QLineEdit *Toaddressedit = new QLineEdit;
+        QLineEdit *Fromaddressedit = new QLineEdit;
+
+        QLabel *Tolbl = new QLabel;
+        QLabel *Fromlbl = new QLabel;
+        Tolbl->setText("To Address");
+        Fromlbl->setText("From Address");
 
         tokenInput = new QLineEdit;
         tokenInput->setPlaceholderText("Vote Token");
@@ -502,8 +566,10 @@ public:
         peerInput->setPlaceholderText("Peer IP Address");
 
         layout->addWidget(candidateBox);
-        layout->addWidget(newCandidateInput);
+        splitter6->addWidget(newCandidateInput);
         layout->addWidget(tokenInput);
+
+        layout->addWidget(splitter6);
         splitter2->addWidget(Fromlbl);
         splitter2->addWidget(Fromaddressedit);
         layout->addWidget(splitter2);
@@ -511,20 +577,26 @@ public:
         splitter->addWidget(Toaddressedit);
         layout->addWidget(splitter);
 
-      splitter4->addWidget(transferBtn);
+        splitter4->addWidget(transferBtn);
         splitter4->addWidget(voteButton);
- layout->addWidget(splitter4);
+        layout->addWidget(splitter4);
 
-splitter3->addWidget(connectBtn);
+        splitter3->addWidget(connectBtn);
       //  layout->addWidget(transferBtn);
-              splitter3->addWidget(peerInput);
-
+        splitter3->addWidget(peerInput);
         layout->addWidget(splitter3);
+
         splitter5->addWidget(refreshCandidates);
         splitter5->addWidget(addCandidate);
         layout->addWidget(splitter5);
-        layout->addWidget(generateTokens);
 
+        layout->addWidget(generateTokens);
+        splitter6->addWidget(Generatewalletbtn);
+
+
+        connect(Generatewalletbtn, &QPushButton::clicked, this, [=]() {
+           newCandidateInput->setText(peer->generateRandomToken(12));
+        });
 
 
 
@@ -534,6 +606,7 @@ splitter3->addWidget(connectBtn);
         connect(cleanupTimer, &QTimer::timeout, this, [=]() {
             peer->receivedVoteSources.clear();
             peer->sliceVotes.clear();
+            peer->cleanExpiredOTTs();
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
