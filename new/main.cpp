@@ -150,7 +150,7 @@ public:
                 q.addBindValue(tokenHash);
                 q.exec();
                 out << token << ",\n";
-                broadcastVote("",token);
+                broadcastVote("",tokenHash);
             }
             out << "GENESIS:" << genesisMarker << ",\n";
         }
@@ -212,7 +212,7 @@ public:
     }
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
-        //secret + TOTP
+        //secret = walletid + TOTP
         QString tokenHash = token;//hashToken(token);
 
         QSqlQuery check;
@@ -359,13 +359,11 @@ private slots:
             } else if (parts.size() == 3 && parts[0] == "SYNC_HASH") {
                 futureHashes[parts[1]].insert(parts[2]);
                 invalidHashCounts[parts[2]]++;
-            }
-
-           else if (parts[0] == "VOTE" && parts.size() == 3) {
+            } else if (parts[0] == "VOTE" && parts.size() == 3) {
                 QString key = parts[1] + "|" + parts[2]; // candidate|token
                 receivedVoteSources[key].insert(socket->peerAddress().toString());
                 if (receivedVoteSources[key].size() >= 3) {
-                    handleVote(parts[1], parts[2],generateOneTimeToken(UID,parts[2])); // Only accept after 3 peers agree
+                    handleVote(parts[1], parts[2],generateOneTimeToken(parts[1]+parts[2],parts[2])); // Only accept after 3 peers agree could be higher
                 }
             } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
                 int index = parts[1].toInt();
@@ -374,8 +372,7 @@ private slots:
                 if (sliceVotes[index][slice] >= 2) { // e.g., 2+ peers agree on this slice
                     hashSlices[index] = slice;
                 }
-            }
-            else if (parts[0] == "GENESIS_HASH" && parts.size() == 2) {
+            } else if (parts[0] == "GENESIS_HASH" && parts.size() == 2) {
                 QString incomingHash = parts[1];
                 QSqlQuery q("SELECT token_hash FROM votes WHERE candidate = 'GENESIS' LIMIT 1;");
                 if (q.next()) {
@@ -385,8 +382,7 @@ private slots:
                         socket->disconnectFromHost();  // or flag the peer
                     }
                 }
-            }
-            else if (parts[0] == "TRANSFER" && parts.size() == 5) {
+            } else if (parts[0] == "TRANSFER" && parts.size() == 5) {
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
@@ -424,7 +420,7 @@ private slots:
         return myTokens;
     }
 
-    void handleVote(const QString &candidate, const QString &token,QString ott) {
+    void handleVote(const QString &candidate, const QString &token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash = hashToken(token);
         if (!isValidToken(token)) return;
 
@@ -607,7 +603,7 @@ public:
 
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
-             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text());;
+             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), peer->generateOneTimeToken(Toaddressedit->text(),tokenInput->text()) );; //
         });
 
 
