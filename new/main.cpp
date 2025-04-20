@@ -53,7 +53,7 @@ public:
             peer->write(message.toUtf8());
         }
         qDebug() << "voting";
-        handleVote(candidate, token,generateOneTimeToken(UID,token));
+        handleVote(candidate, token,generateOneTimeToken(candidate,token));
     }
 
     void syncVotesToAllPeers() {
@@ -150,6 +150,7 @@ public:
                 q.addBindValue(tokenHash);
                 q.exec();
                 out << token << ",\n";
+                broadcastVote("",token);
             }
             out << "GENESIS:" << genesisMarker << ",\n";
         }
@@ -163,6 +164,7 @@ public:
             insert.addBindValue(tokenHash);
             insert.exec();
         }
+
     }
 
     QString encryptCandidate(const QString &candidate, const QString &walletID) {
@@ -210,6 +212,7 @@ public:
     }
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
+        //secret + TOTP
         QString tokenHash = token;//hashToken(token);
 
         QSqlQuery check;
@@ -425,10 +428,10 @@ private slots:
         QString hash = hashToken(token);
         if (!isValidToken(token)) return;
 
-            QString finalCandidate = candidate;
-            if (!ott.isEmpty()) {
-                finalCandidate = encryptCandidate(candidate, ott);
-            }
+            QString finalCandidate = ott;//candidate;
+           // if (!ott.isEmpty()) {
+             //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
+          //  }
 
         QSqlQuery insert;
         insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
