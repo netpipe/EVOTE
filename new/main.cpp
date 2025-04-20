@@ -11,7 +11,7 @@
 #include <qaesencryption.h>
 #include "totp.h"
 
-
+    QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) OTP
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -198,15 +198,14 @@ public:
 
 
     QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
-
+        //decrypt the one time token from the token later
         QString sharedSecret = tokenHash; // Example shared secret (Base32 encoded)
-
-        // Create the TOTP instance
         TOTP totp(sharedSecret,SHA256);
 
-        // Generate the TOTP code
         QString generatedCode = totp.generateTOTP();
-        qDebug() << "Generated TOTP Code: " << generatedCode;
+       // qDebug() << "Generated TOTP Code: " << generatedCode;
+
+        generatedCode = encryptCandidate (walletID +":" + generatedCode,tokenHash);
         return generatedCode;
     }
 
@@ -222,14 +221,14 @@ public:
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
      //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
-        QString computedOwnership = encryptCandidate(senderSecret + token,UID);
+        QString computedOwnership = encryptCandidate(senderSecret,token);
 
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
         }
 
-        QString newEncryptedOwner = encryptCandidate(receiverSecret + token,UID);
+        QString newEncryptedOwner = encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -384,34 +383,25 @@ private slots:
                     }
                 }
             }
-            else if (parts[0] == "TRANSFER" && parts.size() == 4) {
+            else if (parts[0] == "TRANSFER" && parts.size() == 5) {
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
+                TOTP totp(sharedSecret,SHA256,30);
 
-    // Secret key (typically, you generate this and share it between server and client)
-    QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded)
-
-    // Create the TOTP instance
-    TOTP totp(sharedSecret,SHA256);
-
-    // Generate the TOTP code
-    QString generatedCode = totp.generateTOTP();
-    qDebug() << "Generated TOTP Code: " << generatedCode;
-
-    // Verify the TOTP code (you would typically compare the input from the user)
-    bool isValid = totp.verifyTOTP(generatedCode);
-    qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
-
-
-             //   transferVote(from, to, token);
+                bool isValid = totp.verifyTOTP(parts[4]);
+                qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
+                if (isValid){
+                    //handleVote();//
+              //  transferVote(from, to, token);
+                }
             }
 
 
         }
     }
 
-    QStringList findMyVotes(const QString &walletID, const QByteArray &aesKey, const QByteArray &aesIV) {
+    QStringList findMyVotes(const QString &walletID) {
         QSqlQuery q("SELECT candidate, token_hash FROM votes;");
         QStringList myTokens;
 
@@ -420,13 +410,12 @@ private slots:
             QString tokenHash = q.value(1).toString();
 
             // Decrypt candidate field
-          //  QByteArray decrypted = decryptCandidate(encCandidate, aesKey); // You’ll define this
-         //   QString decryptedText = QString::fromUtf8(decrypted);
+           QString decrypted = decryptCandidate(encCandidate, tokenHash); // You’ll define this
 
             // Check if it matches walletID
-          //  if (decryptedText.startsWith(walletID + ":")) {
-          //      myTokens.append(tokenHash); // or store whole record
-          //  }
+            if (decrypted.startsWith(walletID + ":")) {
+                myTokens.append(tokenHash); // or store whole record
+            }
         }
 
         return myTokens;

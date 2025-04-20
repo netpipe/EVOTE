@@ -6,10 +6,11 @@
 #include <QDebug>
 HashAlgorithm m_algorithm;
 
-TOTP::TOTP(const QString &sharedSecret, HashAlgorithm algorithm)
-    : m_sharedSecret(sharedSecret), m_algorithm(algorithm)
+TOTP::TOTP(const QString &sharedSecret, HashAlgorithm algorithm, int timeStep)
+    : m_sharedSecret(sharedSecret), m_algorithm(algorithm), m_timeStep(timeStep)
 {
 }
+
 
 
 QString TOTP::generateTOTP() const
@@ -18,6 +19,7 @@ QString TOTP::generateTOTP() const
     qint64 timestamp = QDateTime::currentSecsSinceEpoch();
     // Calculate the number of time steps
     qint64 timeCounter = timestamp / m_timeStep;
+    int m_timeStep;
 
     // Convert the time counter to a QByteArray
     QByteArray timeArray;

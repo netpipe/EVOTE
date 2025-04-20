@@ -17,7 +17,8 @@ class TOTP
 {
 public:
     // Constructor that takes the secret key (shared)
-    TOTP(const QString &sharedSecret, HashAlgorithm algorithm = SHA1);
+    TOTP(const QString &sharedSecret, HashAlgorithm algorithm = SHA1, int timeStep = 30);
+
     HashAlgorithm m_algorithm;
 
 
