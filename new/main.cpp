@@ -14,6 +14,8 @@
 //todo
 //generate 2 otp numbers keep one and send the other for encryption and keep the other for redemption verification + has your ewallet id in it
 
+//decrypt original token then reencrypt during transfers instead of just using hashes.
+
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
 
@@ -191,7 +193,7 @@ public:
             }
             out << "GENESIS:" << UID.toInt() << ",\n";
         }
-currentVoteHash();//
+broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     }
 
     QString encryptCandidate(const QString &candidate, const QString &walletID) {
@@ -235,7 +237,6 @@ currentVoteHash();//
        // qDebug() << "Generated TOTP Code: " << generatedCode;
 
        // generatedCode = encryptCandidate (walletID +":" + generatedCode,tokenHash);
-
         generatedCode = xorStrings(walletID + ":" + generatedCode,sharedSecret);
         return generatedCode;
     }
@@ -513,11 +514,8 @@ private slots:
         }
         syncVotesToAllPeers();
 
-        // use token encrypted by encrypted wallet id string ? then a token matcher to find and collect all the coins owned by yourself
-        //maybe xor the ewalletid by the otp to make searching faster.
-        //or keep encrypted walletid and OTP encrypted by token  for later to redeem tokens
+        ///maybe xor the ewalletid by the otp to make searching faster.
     }
-
 
     void performSync() {
         if (hashSlices.size() == 3) {
@@ -526,6 +524,7 @@ private slots:
             if (reconstructed == currentVoteHash().toUtf8()) {
                 qDebug() << "Sync verification passed.";
             } else {
+               // QMessageBox::information (0, "Test",  QString("Test %1").arg(QString::number(test1)));
                 qDebug() << "WARNING: Sync hash mismatch.";
             }
             hashSlices.clear();
