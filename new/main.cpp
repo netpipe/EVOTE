@@ -677,12 +677,13 @@ int main(int argc, char *argv[]) {
     parser.addHelpOption();
     parser.addVersionOption();
 
-    QCommandLineOption voteOpt("headless", "Run without GUI");
-    QCommandLineOption generateOpt("headless", "Run without GUI");
-    QCommandLineOption transferOpt("headless", "Run without GUI");
-    QCommandLineOption getBalanceOpt("headless", "Run without GUI");
-   // QCommandLineOption headlessOpt("headless", "Run without GUI");
-   // QCommandLineOption headlessOpt("headless", "Run without GUI");
+    QCommandLineOption voteOpt("vote", "Run without GUI");
+    QCommandLineOption generateOpt("generate", "Run without GUI");
+    QCommandLineOption transferOpt("transfer", "Run without GUI");
+    QCommandLineOption getBalanceOpt("balance", "Run without GUI");
+    QCommandLineOption headlessOpt("headless", "Run without GUI");
+    QCommandLineOption walletIDOpt("walletID", "from address");
+    QCommandLineOption toOpt("to", "to address");
 
     parser.addOption(voteOpt);
     parser.process(app);
@@ -690,7 +691,13 @@ int main(int argc, char *argv[]) {
 
             qDebug() << "vote.";   }
 
-
+        if (parser.isSet(headlessOpt)) {
+             qDebug() << "Headless Mode.";
+            return 0;   }
+        if (parser.isSet(generateOpt)) {
+            qDebug() << "generateOpt.";   }
+        if (parser.isSet(getBalanceOpt) && parser.isSet(toOpt) && parser.isSet(walletIDOpt)) {
+            qDebug() << "getBalanceOpt.";   }
             window.show();
     return app.exec();
 }
