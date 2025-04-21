@@ -17,10 +17,10 @@ int ctokens;
 QComboBox *candidateBox;
  QCommandLineParser parser;
 
- QCommandLineOption voteOpt("vote", "Run without GUI");
- QCommandLineOption generateOpt("generate", "Run without GUI");
- QCommandLineOption transferOpt("transfer", "Run without GUI");
- QCommandLineOption getBalanceOpt("balance", "Run without GUI");
+ QCommandLineOption voteOpt("vote", "vote");
+ QCommandLineOption generateOpt("generate", "generate");
+ QCommandLineOption transferOpt("transfer", "transfer");
+ QCommandLineOption getBalanceOpt("balance", "balance");
  QCommandLineOption headlessOpt("headless", "Run without GUI");
  QCommandLineOption walletIDOpt("walletID", "from address");
  QCommandLineOption toOpt("to", "to address");
@@ -689,15 +689,22 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
 
-
-
-    VotingApp window;
     parser.setApplicationDescription("Decentralized");
     parser.addHelpOption();
     parser.addVersionOption();
 
     parser.addOption(voteOpt);
+    parser.addOption(generateOpt);
+    parser.addOption(transferOpt);
+    parser.addOption(getBalanceOpt);
+    parser.addOption(headlessOpt);
+    parser.addOption(walletIDOpt);
+    parser.addOption(toOpt);
+
     parser.process(app);
+
+    VotingApp window;
+
 
     if (parser.isSet(headlessOpt)) {
          qDebug() << "Headless Mode.";
