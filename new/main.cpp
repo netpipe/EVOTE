@@ -143,7 +143,7 @@ public:
       //  QString hash = hashToken(token);
         QSqlQuery q;
         q.prepare("SELECT candidate FROM votes WHERE candidate = ?;");
-        q.addBindValue(hash);
+        q.addBindValue(token);
         return q.exec() && q.next() && q.value(0) == "";
     }
 
@@ -151,7 +151,7 @@ public:
       //  QString hash = hashToken(token);
         QSqlQuery q;
         q.prepare("SELECT token_hash FROM votes WHERE token_hash = ?;");
-        q.addBindValue(hash);
+        q.addBindValue(token);
         return q.exec() && q.next() && q.value(0) == "";
     }
 
@@ -226,8 +226,12 @@ broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
         //check walletID for available tokens compare to amount and send.
         QStringList Test =  getVotes(senderSecret);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
-        QString tokenHash = token;//hashToken(token);
-
+        QString tokenHash;
+        if (amount==0){ // if sending just existing tokenhash
+            tokenHash == token;//
+        }else{
+            tokenHash == encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
+        }
         QSqlQuery check;
         check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
         check.addBindValue(tokenHash);
@@ -392,7 +396,7 @@ private slots:
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
                 if (isValid){
                     //handleVote();//
-                    handleTransfer(token,from, to,1);
+                    handleTransfer(token,from, to,0);
                 }
             }
 
@@ -614,7 +618,7 @@ public:
         cleanupTimer->start(300000); // Clear every 5 minutes
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
-             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), peer->generateOneTimeToken(Toaddressedit->text(),tokenInput->text()) ,amountEdt->text().toInt());; //
+             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
         });
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
