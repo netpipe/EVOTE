@@ -11,7 +11,7 @@
 #include <qaesencryption.h>
 #include "totp.h"
 
-    QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) OTP
+QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -132,6 +132,22 @@ public:
         return q.exec() && q.next() && q.value(0).toInt() == 0;
     }
 
+    bool isValidCandidate(const QString &token) { //check if is used too
+        QString hash = hashToken(token);
+        QSqlQuery q;
+        q.prepare("SELECT candidate FROM votes WHERE candidate = ?;");
+        q.addBindValue(hash);
+        return q.exec() && q.next() && q.value(0) == "";
+    }
+
+    bool isValidTokenHash(const QString &token) {
+        QString hash = hashToken(token);
+        QSqlQuery q;
+        q.prepare("SELECT token_hash FROM votes WHERE token_hash = ?;");
+        q.addBindValue(hash);
+        return q.exec() && q.next() && q.value(0) == "";
+    }
+
     void generateTokenPool(int count) {
 
 
@@ -140,9 +156,10 @@ public:
         clear.exec("DELETE FROM votes");
 
         //UID=generateRandomToken(10);// set then save
-        const QString genesisMarker = UID; //"GENESIS";
+        const QString genesisMarker = "GENESIS";
 
-        QString tokenHash = hashToken("genesis_seed_token");
+       // QString tokenHash = hashToken("genesis_seed_token");
+        QString tokenHash = hashToken(UID);
 
         QSqlQuery check("SELECT COUNT(*) FROM votes;");
         if (check.next() && check.value(0).toInt() == 0) {
@@ -168,7 +185,7 @@ public:
                 out << token << ",\n";
                 broadcastVote("",tokenHash);
             }
-            out << "GENESIS:" << genesisMarker << ",\n";
+            out << "GENESIS:" << UID.toInt() << ",\n";
         }
 
     }
@@ -412,7 +429,6 @@ private slots:
                 }
             }
 
-
         }
     }
 
@@ -432,22 +448,23 @@ private slots:
                 myTokens.append(tokenHash); // or store whole record
             }
         }
-
         return myTokens;
     }
 
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
-QString hash;
+        QString hash;
         QString finalCandidate;
          if (candidate != ""){
             finalCandidate = ott;//candidate;
             hash=token;
          }else{
             hash = hashToken(token);
-            finalCandidate = candidate;
+            finalCandidate = ott;//candidate;
          }
 
-        if (!isValidToken(token) && candidate != "") return;
+       // if (!isValidToken(token) && candidate != "") return;
+      // if (!isValidTokenHash(finalCandidate) && candidate != "") return;
+        if (!isValidCandidate(finalCandidate) && candidate != "") return;
 
            // if (!ott.isEmpty()) {
              //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
@@ -458,12 +475,16 @@ QString hash;
         insert.addBindValue(finalCandidate);
         insert.addBindValue(hash);
         if (insert.exec()) {
-            QSqlQuery mark;
-            mark.prepare("UPDATE tokens SET used = 1 WHERE token_hash = ?;");
-            mark.addBindValue(hash);
-            mark.exec();
+      //      QSqlQuery mark;
+      //      mark.prepare("UPDATE tokens SET used = 1 WHERE token_hash = ?;");
+      //      mark.addBindValue(hash);
+      //      mark.exec();
         }
         syncVotesToAllPeers();
+
+        // use token encrypted by encrypted wallet id string ? then a token matcher to find and collect all the coins owned by yourself
+        //maybe xor the ewalletid by the otp to make searching faster.
+        //or keep encrypted walletid and OTP encrypted by token  for later to redeem tokens
     }
 
 
@@ -542,7 +563,9 @@ public:
         resize(400, 300);
 
         peer = new PeerNode(this);
-        peer->UID = qrand() % 1000; //"5555";
+        peer->UID = QString::number(qrand() % 10000); //"5555";
+      //  peer->UID = "5555";
+       // qDebug() << qrand() % 10000;
         peer->setupDatabase();
         peer->loadPeersFromFile();
         QVBoxLayout *layout = new QVBoxLayout(this);
