@@ -98,8 +98,6 @@ public:
             selectedPeers[i]->write(QString("HASH_SLICE|%1|%2\n").arg(i).arg(QString(slices[i].toHex())).toUtf8());
         }
 
-
-
         // Inform the requesting peer of sync time
         requestingPeer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
     }
@@ -155,8 +153,9 @@ public:
             insert.exec();
         }
 
-
-        QFile file("tokens.csv");
+        QString  fileName= QFileDialog::getSaveFileName(0, "Save tokens CSV file", QCoreApplication::applicationDirPath(), "CSV (*.csv);" );
+        QFile file(fileName);
+        // QFile file("tokens.csv");
         if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             QTextStream out(&file);
             for (int i = 0; i < count; ++i) {
@@ -255,7 +254,11 @@ public:
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
+    #ifdef __APPLE__s
+        db.setDatabaseName("/Applications/EVOTE.app/Contents/MacOS/peer_voting.db");
+    #else
         db.setDatabaseName("peer_voting.db");
+    #endif
         db.open();
         QSqlQuery query;
         query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE);");
@@ -307,7 +310,11 @@ public:
     }
 
     void savePeersToFile() {
-        QFile file("peers.txt");
+        #ifdef __APPLE__
+            QFile file("/Applications/EVOTE.app/Contents/MacOS/peers.txt");
+        #else
+            QFile file("peers.txt");
+        #endif
         if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             QTextStream out(&file);
             for (const QString &addr : connectedPeers)
@@ -316,7 +323,11 @@ public:
     }
 
     void loadPeersFromFile() {
-        QFile file("peers.txt");
+        #ifdef __APPLE__
+            QFile file("/Applications/EVOTE.app/Contents/MacOS/peers.txt");
+        #else
+            QFile file("peers.txt");
+        #endif
         if (file.open(QIODevice::ReadOnly)) {
             QStringList lines;
             QTextStream in(&file);
@@ -327,11 +338,9 @@ public:
                 }
             }
 
+            // Shuffle to avoid same peer order on every startup
             auto rng = QRandomGenerator::global(); // This is the engine
             std::shuffle(lines.begin(), lines.end(), *rng);
-
-            // Shuffle to avoid same peer order on every startup
-           // std::shuffle(lines.begin(), lines.end(), QRandomGenerator::global()->generate());
 
             for (const QString &line : lines) {
                 QStringList hostPort = line.split(":");
@@ -399,7 +408,7 @@ private slots:
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
                 if (isValid){
                     //handleVote();//
-              //  transferVote(from, to, token);
+                    //transferVote(from, to, token);
                 }
             }
 
@@ -506,6 +515,7 @@ private slots:
 public:
     QMap<QString, QSet<QString>> receivedVoteSources;
     QMap<int, QMap<QByteArray, int>> sliceVotes; // slice index -> hash -> count
+    QString UID;
 private:
     QTcpServer *server;
     QList<QTcpSocket *> peers;
@@ -517,7 +527,7 @@ private:
     QMap<int, QByteArray> hashSlices;
 
     QTimer *syncTimer;
-    QString UID;
+
 };
 
 class VotingApp : public QWidget {
@@ -525,10 +535,11 @@ class VotingApp : public QWidget {
 
 public:
     VotingApp(QWidget *parent = nullptr) : QWidget(parent) {
-        setWindowTitle("Decentralized Voting");
+        setWindowTitle("Decentralized");
         resize(400, 300);
 
         peer = new PeerNode(this);
+        peer->UID = qrand() % 1000; //"5555";
         peer->setupDatabase();
         peer->loadPeersFromFile();
         QVBoxLayout *layout = new QVBoxLayout(this);
@@ -557,6 +568,8 @@ public:
 
         QLineEdit *Toaddressedit = new QLineEdit;
         QLineEdit *Fromaddressedit = new QLineEdit;
+        Toaddressedit->setPlaceholderText("To Address");
+        Fromaddressedit->setPlaceholderText("From tokenID");
 
         QLabel *Tolbl = new QLabel;
         QLabel *Fromlbl = new QLabel;
@@ -570,13 +583,17 @@ public:
         peerInput->setPlaceholderText("Peer IP Address");
 
         layout->addWidget(candidateBox);
+
         splitter6->addWidget(newCandidateInput);
+        splitter6->addWidget(Generatewalletbtn);
+        layout->addWidget(splitter6);
+
         layout->addWidget(tokenInput);
 
-        layout->addWidget(splitter6);
         splitter2->addWidget(Fromlbl);
         splitter2->addWidget(Fromaddressedit);
         layout->addWidget(splitter2);
+
         splitter->addWidget(Tolbl);
         splitter->addWidget(Toaddressedit);
         layout->addWidget(splitter);
@@ -585,17 +602,18 @@ public:
         splitter4->addWidget(voteButton);
         layout->addWidget(splitter4);
 
-        splitter3->addWidget(connectBtn);
-      //  layout->addWidget(transferBtn);
-        splitter3->addWidget(peerInput);
-        layout->addWidget(splitter3);
-
         splitter5->addWidget(refreshCandidates);
         splitter5->addWidget(addCandidate);
         layout->addWidget(splitter5);
 
+        splitter3->addWidget(connectBtn);
+        splitter3->addWidget(peerInput);
+        layout->addWidget(splitter3);
+
+
+
         layout->addWidget(generateTokens);
-        splitter6->addWidget(Generatewalletbtn);
+
 
 
         connect(Generatewalletbtn, &QPushButton::clicked, this, [=]() {
