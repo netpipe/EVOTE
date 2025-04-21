@@ -237,7 +237,22 @@ public:
         return generatedCode;
     }
 
-    void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret) {
+    QStringList getTokensLeft(QString walletID) {
+        QSqlQuery query;
+        QStringList Test;
+        query.prepare("SELECT tokenID FROM candidates WHERE name = ? ");
+
+        if (query.next()) {
+            Test.append(query.value(0).toString());
+            //return query.value(0).toInt(); // Return the number of remaining tokens
+        }
+    return Test;
+      //  return 0; // In case no tokens are left
+    }
+
+    void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,int amount) {
+
+        //check walletID for available tokens compare to amount and send.
         //secret = walletid + TOTP
         QString tokenHash = token;//hashToken(token);
 
@@ -281,7 +296,7 @@ public:
     #endif
         db.open();
         QSqlQuery query;
-        query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE);");
+        query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE,tokenID TEXT UNIQUE);");
         query.exec("CREATE TABLE IF NOT EXISTS tokens (token_hash TEXT UNIQUE, used INTEGER);");
         query.exec("CREATE TABLE IF NOT EXISTS votes (candidate TEXT, token_hash TEXT UNIQUE);");
     }
@@ -613,16 +628,21 @@ public:
         QSplitter *splitter4 = new QSplitter;
         QSplitter *splitter5 = new QSplitter;
         QSplitter *splitter6 = new QSplitter;
+        QSplitter *splitter7 = new QSplitter;
 
         QLineEdit *Toaddressedit = new QLineEdit;
         QLineEdit *Fromaddressedit = new QLineEdit;
+        QLineEdit *amountEdt = new QLineEdit;
         Toaddressedit->setPlaceholderText("To Address");
         Fromaddressedit->setPlaceholderText("From tokenID");
 
         QLabel *Tolbl = new QLabel;
         QLabel *Fromlbl = new QLabel;
+        QLabel *amountlbl  = new QLabel;
+        amountlbl->setText("amount");
+
         Tolbl->setText("To Address");
-        Fromlbl->setText("From tokenID");
+        Fromlbl->setText("From address");
 
         tokenInput = new QLineEdit;
         tokenInput->setPlaceholderText("Vote Token");
@@ -635,6 +655,11 @@ public:
         splitter6->addWidget(newCandidateInput);
         splitter6->addWidget(Generatewalletbtn);
         layout->addWidget(splitter6);
+
+        splitter7->addWidget(amountEdt);
+        splitter7->addWidget(amountlbl);
+        layout->addWidget(splitter7);
+
 
         layout->addWidget(tokenInput);
 
@@ -673,7 +698,7 @@ public:
         cleanupTimer->start(300000); // Clear every 5 minutes
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
-             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), peer->generateOneTimeToken(Toaddressedit->text(),tokenInput->text()) );; //
+             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), peer->generateOneTimeToken(Toaddressedit->text(),tokenInput->text()) ,amountEdt->text().toInt());; //
         });
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
