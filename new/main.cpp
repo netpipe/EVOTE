@@ -11,6 +11,9 @@
 #include <qaesencryption.h>
 #include "totp.h"
 
+//todo
+//generate 2 otp numbers keep one and send the other for encryption and keep the other for redemption verification + has your ewallet id in it
+
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
 
@@ -237,14 +240,24 @@ currentVoteHash();//
         return generatedCode;
     }
 
-    QStringList getTokensLeft(QString walletID) {
+    QStringList getVotes(QString walletID) { //gets them from wallets instead of votes list
         QSqlQuery query;
         QStringList Test;
         query.prepare("SELECT * FROM candidates WHERE name = :name");
         query.bindValue(":name", walletID);
 
         if (query.next()) {
-            Test.append(query.value(0).toString());
+            Test.append(query.value(1).toString());
+
+            //might not need this if it puts the second encrypted otp in the findmyvotes function //
+            QString otpenc = query.value(1).toString();
+            QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(otpenc.toUtf8())), walletID);  // → original
+            // Check if it matches walletID
+            if (decrypted.startsWith(walletID + ":")) {
+            //    .append(tokenHash); // or store whole record
+                            //get second half of otp
+            }
+
             //return query.value(0).toInt(); // Return the number of remaining tokens
         }
     return Test;
@@ -254,7 +267,7 @@ currentVoteHash();//
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,int amount) {
 
         //check walletID for available tokens compare to amount and send.
-        QStringList Test =  getTokensLeft(senderSecret);// get walletid tokens left in local wallet
+        QStringList Test =  getVotes(senderSecret);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
         QString tokenHash = token;//hashToken(token);
 
@@ -464,6 +477,8 @@ private slots:
                 myTokens.append(tokenHash); // or store whole record
             }
         }
+
+        //optionally add them to your own wallets here without returning
         return myTokens;
     }
 
