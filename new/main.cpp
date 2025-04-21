@@ -14,6 +14,7 @@
 QString walletID;
 QString ewalletID;
 int ctokens;
+QComboBox *candidateBox;
 //todo
 // otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 
@@ -329,6 +330,31 @@ ctokens=0;
         return myTokens;
     }
 
+    bool addWallet(QString Candidate){
+        bool ok;
+        QString text = QInputDialog::getText(0, "Password",
+                                             "New Password:", QLineEdit::Normal,
+                                             "", &ok);
+        QString name = encryptCandidate(Candidate, text);
+
+        if (ok && !text.isEmpty()) {
+        QSqlQuery q;
+        q.prepare("INSERT INTO candidates (name) VALUES (?);");
+        q.addBindValue(name);
+        if (q.exec()) candidateBox->addItem(name);
+
+        }
+
+        if (0){ //save password
+            QString  fileName= QFileDialog::getSaveFileName(0, "Save userfile", QCoreApplication::applicationDirPath(), "txt (*.txt);" );
+            QFile file(fileName);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                QTextStream out(&file);
+                out << name << ":" << text << "\n";
+            }
+        }
+    }
+
 private slots:
     void handleConnection() {
         QTcpSocket *client = server->nextPendingConnection();
@@ -583,25 +609,6 @@ splitter5->addWidget(Generatewalletbtn);
                ewalletID= peer->encryptCandidate(selected,walletID);
             });
 
-        QCommandLineParser parser;
-        parser.setApplicationDescription("Decentralized");
-        parser.addHelpOption();
-        parser.addVersionOption();
-
-        QCommandLineOption voteOpt("headless", "Run without GUI");
-        QCommandLineOption generateOpt("headless", "Run without GUI");
-        QCommandLineOption transferOpt("headless", "Run without GUI");
-        QCommandLineOption getBalanceOpt("headless", "Run without GUI");
-       // QCommandLineOption headlessOpt("headless", "Run without GUI");
-       // QCommandLineOption headlessOpt("headless", "Run without GUI");
-
-        parser.addOption(voteOpt);
-
-        if (parser.isSet(voteOpt)) {
-
-            qDebug() << "vote.";   }
-
-
         connect(Generatewalletbtn, &QPushButton::clicked, this, [=]() {
            newCandidateInput->setText(peer->generateRandomToken(12));
         });
@@ -633,29 +640,7 @@ splitter5->addWidget(Generatewalletbtn);
        // });
 
         connect(addCandidate, &QPushButton::clicked, this, [=]() {
-            bool ok;
-            QString text = QInputDialog::getText(0, "Password",
-                                                 "New Password:", QLineEdit::Normal,
-                                                 "", &ok);
-            QString name = peer->encryptCandidate(newCandidateInput->text(), text);
-
-            if (ok && !text.isEmpty()) {
-            QSqlQuery q;
-            q.prepare("INSERT INTO candidates (name) VALUES (?);");
-            q.addBindValue(name);
-            if (q.exec()) candidateBox->addItem(name);
-
-            }
-
-            if (0){ //save password
-                QString  fileName= QFileDialog::getSaveFileName(0, "Save userfile", QCoreApplication::applicationDirPath(), "txt (*.txt);" );
-                QFile file(fileName);
-                if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                    QTextStream out(&file);
-                    out << name << ":" << text << "\n";
-                }
-            }
-
+            peer->addWallet(newCandidateInput->text());
         });
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
@@ -677,14 +662,36 @@ splitter5->addWidget(Generatewalletbtn);
 
 private:
     PeerNode *peer;
-    QComboBox *candidateBox;
     QLineEdit *newCandidateInput, *tokenInput, *peerInput;
 };
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+
+
+
+
     VotingApp window;
-    window.show();
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Decentralized");
+    parser.addHelpOption();
+    parser.addVersionOption();
+
+    QCommandLineOption voteOpt("headless", "Run without GUI");
+    QCommandLineOption generateOpt("headless", "Run without GUI");
+    QCommandLineOption transferOpt("headless", "Run without GUI");
+    QCommandLineOption getBalanceOpt("headless", "Run without GUI");
+   // QCommandLineOption headlessOpt("headless", "Run without GUI");
+   // QCommandLineOption headlessOpt("headless", "Run without GUI");
+
+    parser.addOption(voteOpt);
+    parser.process(app);
+        if (parser.isSet(voteOpt)) {
+
+            qDebug() << "vote.";   }
+
+
+            window.show();
     return app.exec();
 }
 
