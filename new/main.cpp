@@ -188,7 +188,7 @@ public:
             }
             out << "GENESIS:" << UID.toInt() << ",\n";
         }
-
+currentVoteHash();//
     }
 
     QString encryptCandidate(const QString &candidate, const QString &walletID) {
@@ -331,16 +331,10 @@ public:
         return lines;
     }
 
-    QString getUnusedToken() {
-        QSqlQuery query("SELECT tokens FROM tokens WHERE used = 0 LIMIT 1;");
+    QString getUnusedToken(QString walletID) {
+        QSqlQuery query("SELECT tokenID FROM candidates WHERE ;");
         if (query.next()) {
             QString token = query.value(0).toString();
-
-            QSqlQuery update;
-            update.prepare("UPDATE tokens SET used = 1 WHERE token = ?;");
-            update.addBindValue(token);
-            update.exec();
-
             return token;
         }
         return QString(); // no available token
@@ -566,8 +560,10 @@ private slots:
        // return hexOutput ? QString(result.toHex()) : QString::fromUtf8(result);
     }
 
-    QString currentVoteHash() {
-        QSqlQuery q("SELECT candidate, token_hash FROM votes ORDER BY candidate, token_hash;");
+    QString currentVoteHash() {// select all but currentvotehash from votes candidate field
+       // QSqlQuery q("SELECT candidate, token_hash FROM votes ORDER BY candidate, token_hash");
+        QSqlQuery q("SELECT candidate, token_hash FROM votes WHERE candidate IS NOT NULL AND candidate != '' AND candidate != 'SYNC_HASH' ORDER BY candidate, token_hash;");
+
         QByteArray data;
         while (q.next()) {
             data.append(q.value(0).toString() + q.value(1).toString());
