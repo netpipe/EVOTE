@@ -18,7 +18,7 @@
 
 // 2 passwords sender secret and walletID + password. password can decrypt the sender secret or walletId:token hash compare to find all votes
 
-QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
+QString sharedSecret = "TESTING1234"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
 
 class PeerNode : public QObject {
@@ -62,7 +62,10 @@ public:
             peer->write(message.toUtf8());
         }
         qDebug() << "voting";
+
+        // check weather syncVotes or to do your own SYNC_HASH here
         handleVote(candidate, token,generateOneTimeToken(candidate,token));
+
     }
 
     void syncVotesToAllPeers() {
@@ -243,8 +246,8 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
      //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
-        QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
-
+       // QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
+QString computedOwnership = encryptOwnership(senderSecret);
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
@@ -274,7 +277,7 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     #endif
         db.open();
         QSqlQuery query;
-        query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE,tokenID TEXT UNIQUE);");
+        query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE,tokenID TEXT UNIQUE,tokenHash TEXT UNIQUE);");
         query.exec("CREATE TABLE IF NOT EXISTS tokens (token_hash TEXT UNIQUE, used INTEGER);");
         query.exec("CREATE TABLE IF NOT EXISTS votes (candidate TEXT, token_hash TEXT UNIQUE);");
     }
@@ -440,7 +443,10 @@ private slots:
       //      mark.addBindValue(hash);
       //      mark.exec();
         }
-        syncVotesToAllPeers();
+
+        //it already broadcasted so just do our own addition + hashchecking and new SYNC_HASH compare
+
+       // syncVotesToAllPeers(); // overkill for simple vote broadcasting
 
         ///maybe xor the ewalletid by the otp to make searching faster.
     }
