@@ -12,6 +12,7 @@
 #include "totp.h"
 
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
+int PORT = 5555;
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -21,13 +22,13 @@ public:
         UID="1234";
         server = new QTcpServer(this);
         connect(server, &QTcpServer::newConnection, this, &PeerNode::handleConnection);
-        server->listen(QHostAddress::Any, 5555);
+        server->listen(QHostAddress::Any, PORT);
         syncTimer = new QTimer(this);
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
         syncTimer->start(10000); // Synchronize every 10 seconds
     }
 
-    void connectToPeer(const QString &host, int port = 5555) {
+    void connectToPeer(const QString &host, int port = PORT) {
         if (peers.size() >= maxPeers) return;
         QString address = QString("%1:%2").arg(host).arg(port);
         if (connectedPeers.contains(address)) return;
@@ -541,7 +542,9 @@ private slots:
             result[i] = a[i] ^ b[i];
         }
 
-        return QString(result.toHex()); // return hex for readability
+      //  return QString(result.toHex()); // return hex for readability
+        return QString::fromUtf8(result);
+
     }
 
     QString currentVoteHash() {
