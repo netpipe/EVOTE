@@ -583,6 +583,7 @@ private slots:
         while (q.next()) {
             data.append(q.value(0).toString() + q.value(1).toString());
         }
+        qDebug() << 'test';
         return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
@@ -698,6 +699,11 @@ public:
 
         layout->addWidget(generateTokens);
 
+        QObject::connect(candidateBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [=](int index){
+                QString selected = candidateBox->itemText(index);
+               newCandidateInput->setText(selected) ; // You can call with actual selected text
+            });
 
         QCommandLineParser parser;
         parser.setApplicationDescription("Decentralized");
@@ -739,11 +745,30 @@ public:
         });
 
         connect(addCandidate, &QPushButton::clicked, this, [=]() {
-            QString name = newCandidateInput->text();
+            //choose password
+            bool ok;
+            // Ask for birth date as a string.
+            QString text = QInputDialog::getText(0, "Password",
+                                                 "New Password:", QLineEdit::Normal,
+                                                 "", &ok);
+            if (ok && !text.isEmpty()) {
+
+
+            QString name = peer->encryptCandidate(newCandidateInput->text(), text);
             QSqlQuery q;
             q.prepare("INSERT INTO candidates (name) VALUES (?);");
             q.addBindValue(name);
             if (q.exec()) candidateBox->addItem(name);
+
+            }
+
+            QString  fileName= QFileDialog::getSaveFileName(0, "Save tokens CSV file", QCoreApplication::applicationDirPath(), "CSV (*.csv);" );
+            QFile file(fileName);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                QTextStream out(&file);
+                out << text << "\n";
+}
+
         });
 
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
