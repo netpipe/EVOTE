@@ -230,7 +230,9 @@ public:
         QString generatedCode = totp.generateTOTP();
        // qDebug() << "Generated TOTP Code: " << generatedCode;
 
-        generatedCode = encryptCandidate (walletID +":" + generatedCode,tokenHash);
+       // generatedCode = encryptCandidate (walletID +":" + generatedCode,tokenHash);
+
+        generatedCode = xorStrings(walletID + ":" + generatedCode,sharedSecret);
         return generatedCode;
     }
 
@@ -247,14 +249,14 @@ public:
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
      //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
-        QString computedOwnership = encryptCandidate(senderSecret,token);
+        QString computedOwnership = xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
 
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
         }
 
-        QString newEncryptedOwner = encryptCandidate(receiverSecret,token);
+        QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -441,8 +443,8 @@ private slots:
             QString tokenHash = q.value(1).toString();
 
             // Decrypt candidate field
-           QString decrypted = decryptCandidate(encCandidate, tokenHash); // You’ll define this
-
+           //QString decrypted = decryptCandidate(encCandidate, tokenHash); // You’ll define this maybe we'll use XOR for speed
+            QString decrypted = xorStrings(encCandidate,walletID);
             // Check if it matches walletID
             if (decrypted.startsWith(walletID + ":")) {
                 myTokens.append(tokenHash); // or store whole record
@@ -525,6 +527,21 @@ private slots:
             for (int j = 0; j < result.size(); ++j)
                 result[j] = result[j] ^ parts[i][j];
         return result;
+    }
+
+    QString xorStrings(const QString &str1, const QString &str2) {
+        QByteArray a = str1.toUtf8();
+        QByteArray b = str2.toUtf8();
+
+        int len = qMin(a.size(), b.size());
+        QByteArray result;
+        result.resize(len);
+
+        for (int i = 0; i < len; ++i) {
+            result[i] = a[i] ^ b[i];
+        }
+
+        return QString(result.toHex()); // return hex for readability
     }
 
     QString currentVoteHash() {
