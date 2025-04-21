@@ -135,8 +135,25 @@ public:
     }
 
     void generateTokenPool(int count) {
+
+
+        QSqlQuery clear;
+        clear.exec("DELETE FROM tokens");
+        clear.exec("DELETE FROM votes");
+
+        //UID=generateRandomToken(10);// set then save
         const QString genesisMarker = UID; //"GENESIS";
+
         QString tokenHash = hashToken("genesis_seed_token");
+
+        QSqlQuery check("SELECT COUNT(*) FROM votes;");
+        if (check.next() && check.value(0).toInt() == 0) {
+            QSqlQuery insert;
+            insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
+            insert.addBindValue(genesisMarker);
+            insert.addBindValue(tokenHash);
+            insert.exec();
+        }
 
 
         QFile file("tokens.csv");
@@ -153,16 +170,6 @@ public:
                 broadcastVote("",tokenHash);
             }
             out << "GENESIS:" << genesisMarker << ",\n";
-        }
-
-
-        QSqlQuery check("SELECT COUNT(*) FROM votes;");
-        if (check.next() && check.value(0).toInt() == 0) {
-            QSqlQuery insert;
-            insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
-            insert.addBindValue(genesisMarker);
-            insert.addBindValue(tokenHash);
-            insert.exec();
         }
 
     }
@@ -420,11 +427,16 @@ private slots:
         return myTokens;
     }
 
-    void handleVote(const QString &candidate, const QString &token,QString ott) { // maybe use qstringlist for multiple tokens
+    void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash = hashToken(token);
-        if (!isValidToken(token)) return;
+        if (!isValidToken(token) && candidate != "") return;
 
-            QString finalCandidate = ott;//candidate;
+        QString finalCandidate;
+         if (candidate != ""){
+            finalCandidate = ott;//candidate;
+         }else{
+            finalCandidate = candidate;
+         }
            // if (!ott.isEmpty()) {
              //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
           //  }
@@ -549,7 +561,7 @@ public:
         QLabel *Tolbl = new QLabel;
         QLabel *Fromlbl = new QLabel;
         Tolbl->setText("To Address");
-        Fromlbl->setText("From Address");
+        Fromlbl->setText("From tokenID");
 
         tokenInput = new QLineEdit;
         tokenInput->setPlaceholderText("Vote Token");
