@@ -437,15 +437,18 @@ private slots:
     }
 
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
-        QString hash = hashToken(token);
-        if (!isValidToken(token) && candidate != "") return;
-
+QString hash;
         QString finalCandidate;
          if (candidate != ""){
             finalCandidate = ott;//candidate;
+            hash=token;
          }else{
+            hash = hashToken(token);
             finalCandidate = candidate;
          }
+
+        if (!isValidToken(token) && candidate != "") return;
+
            // if (!ott.isEmpty()) {
              //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
           //  }
@@ -610,19 +613,12 @@ public:
         splitter3->addWidget(peerInput);
         layout->addWidget(splitter3);
 
-
-
         layout->addWidget(generateTokens);
-
 
 
         connect(Generatewalletbtn, &QPushButton::clicked, this, [=]() {
            newCandidateInput->setText(peer->generateRandomToken(12));
         });
-
-
-
-
 
         QTimer *cleanupTimer = new QTimer(this);
         connect(cleanupTimer, &QTimer::timeout, this, [=]() {
@@ -631,11 +627,9 @@ public:
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
-
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
              peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), peer->generateOneTimeToken(Toaddressedit->text(),tokenInput->text()) );; //
         });
-
 
         connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
             candidateBox->clear();
