@@ -15,6 +15,15 @@ QString walletID;
 QString ewalletID;
 int ctokens;
 QComboBox *candidateBox;
+ QCommandLineParser parser;
+
+ QCommandLineOption voteOpt("vote", "Run without GUI");
+ QCommandLineOption generateOpt("generate", "Run without GUI");
+ QCommandLineOption transferOpt("transfer", "Run without GUI");
+ QCommandLineOption getBalanceOpt("balance", "Run without GUI");
+ QCommandLineOption headlessOpt("headless", "Run without GUI");
+ QCommandLineOption walletIDOpt("walletID", "from address");
+ QCommandLineOption toOpt("to", "to address");
 //todo
 // otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 
@@ -600,6 +609,17 @@ splitter5->addWidget(Generatewalletbtn);
 
         layout->addWidget(generateTokens);
 
+        if (parser.isSet(voteOpt)) {
+
+            qDebug() << "vote.";   }
+
+        if (parser.isSet(generateOpt)) {
+            qDebug() << "generateOpt.";   }
+        if (parser.isSet(getBalanceOpt) && parser.isSet(walletIDOpt)) {
+            qDebug() << "getBalanceOpt.";   }
+        if (parser.isSet(transferOpt) && parser.isSet(toOpt) && parser.isSet(walletIDOpt)) {
+            qDebug() << "transferOpt.";   }
+
 
         QObject::connect(candidateBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [=](int index){
@@ -672,33 +692,18 @@ int main(int argc, char *argv[]) {
 
 
     VotingApp window;
-    QCommandLineParser parser;
     parser.setApplicationDescription("Decentralized");
     parser.addHelpOption();
     parser.addVersionOption();
 
-    QCommandLineOption voteOpt("vote", "Run without GUI");
-    QCommandLineOption generateOpt("generate", "Run without GUI");
-    QCommandLineOption transferOpt("transfer", "Run without GUI");
-    QCommandLineOption getBalanceOpt("balance", "Run without GUI");
-    QCommandLineOption headlessOpt("headless", "Run without GUI");
-    QCommandLineOption walletIDOpt("walletID", "from address");
-    QCommandLineOption toOpt("to", "to address");
-
     parser.addOption(voteOpt);
     parser.process(app);
-        if (parser.isSet(voteOpt)) {
 
-            qDebug() << "vote.";   }
+    if (parser.isSet(headlessOpt)) {
+         qDebug() << "Headless Mode.";
+        return 0;   }
 
-        if (parser.isSet(headlessOpt)) {
-             qDebug() << "Headless Mode.";
-            return 0;   }
-        if (parser.isSet(generateOpt)) {
-            qDebug() << "generateOpt.";   }
-        if (parser.isSet(getBalanceOpt) && parser.isSet(toOpt) && parser.isSet(walletIDOpt)) {
-            qDebug() << "getBalanceOpt.";   }
-            window.show();
+    window.show();
     return app.exec();
 }
 
