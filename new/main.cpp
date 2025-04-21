@@ -32,6 +32,7 @@ public:
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
         syncTimer->start(10000); // Synchronize every 10 seconds
     }
+#include "encrypt.h" // has encryption stuff + save/load peerslist
 
     void connectToPeer(const QString &host, int port = PORT) {
         if (peers.size() >= maxPeers) return;
@@ -197,51 +198,6 @@ public:
 broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
     }
 
-    QString encryptCandidate(const QString &candidate, const QString &walletID) {
-        QByteArray key = QCryptographicHash::hash(walletID.toUtf8(), QCryptographicHash::Sha256).left(16); // AES-128
-        QByteArray iv = QCryptographicHash::hash("some-static-or-random-IV", QCryptographicHash::Sha256).left(16);
-
-        QByteArray plain = candidate.toUtf8();
-        QByteArray cipher;
-
-        QAESEncryption encryption(QAESEncryption::AES_128, QAESEncryption::CBC);
-        cipher = encryption.encode(plain, key, iv);
-        return cipher.toBase64();
-    }
-
-    QString decryptCandidate(const QString &encrypted, const QString &walletID) {
-        QByteArray key = QCryptographicHash::hash(walletID.toUtf8(), QCryptographicHash::Sha256).left(16);
-        QByteArray iv = QCryptographicHash::hash("some-static-or-random-IV", QCryptographicHash::Sha256).left(16);
-
-        QByteArray cipher = QByteArray::fromBase64(encrypted.toUtf8());
-        QAESEncryption encryption(QAESEncryption::AES_128, QAESEncryption::CBC);
-        QByteArray plain = encryption.decode(cipher, key, iv);
-        return QString::fromUtf8(plain).trimmed();
-    }
-
-
-    QString encryptOwnership(const QString &walletSecret) {
-        return QString(QCryptographicHash::hash(("owned" + walletSecret).toUtf8(), QCryptographicHash::Sha256).toHex());
-    }
-
-    bool verifyOwnership(const QString &candidateField, const QString &walletSecret) {
-        return candidateField == encryptOwnership(walletSecret);
-    }
-
-
-    QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
-        //decrypt the one time token from the token later
-        QString sharedSecret = tokenHash; // Example shared secret (Base32 encoded)
-        TOTP totp(sharedSecret,SHA256);
-
-        QString generatedCode = totp.generateTOTP();
-       // qDebug() << "Generated TOTP Code: " << generatedCode;
-
-        generatedCode = encryptCandidate (generatedCode,walletID);
-       // generatedCode = xorStrings(walletID + ":" + generatedCode,sharedSecret);
-        return generatedCode;
-    }
-
     QStringList getVotes(QString walletID) { //gets them from wallets instead of votes list
         QSqlQuery query;
         QStringList Test;
@@ -355,47 +311,30 @@ broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
         return QString(); // no available token
     }
 
-    void savePeersToFile() {
-        #ifdef __APPLE__
-            QFile file("/Applications/EVOTE.app/Contents/MacOS/peers.txt");
-        #else
-            QFile file("peers.txt");
-        #endif
-        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            QTextStream out(&file);
-            for (const QString &addr : connectedPeers)
-                out << addr << "\n";
-        }
-    }
+    QStringList findMyVotes(const QString &walletID) {
+        QSqlQuery q("SELECT candidate, token_hash FROM votes;");
+        QStringList myTokens;
 
-    void loadPeersFromFile() {
-        #ifdef __APPLE__
-            QFile file("/Applications/EVOTE.app/Contents/MacOS/peers.txt");
-        #else
-            QFile file("peers.txt");
-        #endif
-        if (file.open(QIODevice::ReadOnly)) {
-            QStringList lines;
-            QTextStream in(&file);
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (!line.isEmpty() && !connectedPeers.contains(line)) {
-                    lines.append(line);
-                }
-            }
+        while (q.next()) {
+            QString encCandidate = q.value(0).toString();
+            QString tokenHash = q.value(1).toString();
 
-            // Shuffle to avoid same peer order on every startup
-            auto rng = QRandomGenerator::global(); // This is the engine
-            std::shuffle(lines.begin(), lines.end(), *rng);
+            // Decrypt candidate field
+           QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
+            //QString decrypted = xorStrings(encCandidate,walletID);
+           // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
-            for (const QString &line : lines) {
-                QStringList hostPort = line.split(":");
-                if (hostPort.size() == 2)
-                    connectToPeer(hostPort[0], hostPort[1].toInt());
+            // Check if it matches walletID
+            if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
+                myTokens.append(tokenHash); // or store whole record
             }
         }
-    }
 
+        //OTP list of tokens
+
+        //optionally add them to your own wallets here without returning
+        return myTokens;
+    }
 private slots:
     void handleConnection() {
         QTcpSocket *client = server->nextPendingConnection();
@@ -461,31 +400,6 @@ private slots:
         }
     }
 
-    QStringList findMyVotes(const QString &walletID) {
-        QSqlQuery q("SELECT candidate, token_hash FROM votes;");
-        QStringList myTokens;
-
-        while (q.next()) {
-            QString encCandidate = q.value(0).toString();
-            QString tokenHash = q.value(1).toString();
-
-            // Decrypt candidate field
-           QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
-            //QString decrypted = xorStrings(encCandidate,walletID);
-           // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
-
-            // Check if it matches walletID
-            if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
-                myTokens.append(tokenHash); // or store whole record
-            }
-        }
-
-        //OTP list of tokens
-
-        //optionally add them to your own wallets here without returning
-        return myTokens;
-    }
-
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash;
         QString walletID;
@@ -544,48 +458,7 @@ private slots:
         }
     }
 
-    QList<QByteArray> xorSplitSecret(const QByteArray &secret, int n) {
-        QList<QByteArray> parts;
-        int len = secret.size();
-        for (int i = 0; i < n - 1; ++i) {
-            QByteArray randPart;
-            for (int j = 0; j < len; ++j)
-                randPart.append(QRandomGenerator::global()->generate() & 0xFF);
-            parts.append(randPart);
-        }
-        QByteArray last = secret;
-        for (const QByteArray &p : parts)
-            for (int i = 0; i < len; ++i)
-                last[i] = last[i] ^ p[i];
-        parts.append(last);
-        return parts;
-    }
 
-    QByteArray xorJoinSecret(const QList<QByteArray> &parts) {
-        if (parts.isEmpty()) return {};
-        QByteArray result = parts[0];
-        for (int i = 1; i < parts.size(); ++i)
-            for (int j = 0; j < result.size(); ++j)
-                result[j] = result[j] ^ parts[i][j];
-        return result;
-    }
-
-    QString xorStrings(const QString &str1, const QString &str2) {
-        QByteArray a = str1.toUtf8();
-        QByteArray b = str2.toUtf8();
-
-        int len = qMin(a.size(), b.size());
-        QByteArray result;
-        result.resize(len);
-
-        for (int i = 0; i < len; ++i) {
-            result[i] = a[i] ^ b[i];
-        }
-
-        return QString(result.toHex()); // return hex for readability
-     //   return QString::fromUtf8(result);
-       // return hexOutput ? QString(result.toHex()) : QString::fromUtf8(result);
-    }
 
     QString currentVoteHash() {// select all but currentvotehash from votes candidate field
        // QSqlQuery q("SELECT candidate, token_hash FROM votes ORDER BY candidate, token_hash");
@@ -626,9 +499,7 @@ public:
         resize(400, 300);
 
         peer = new PeerNode(this);
-        peer->UID = QString::number(qrand() % 10000); //"5555";
-      //  peer->UID = "5555";
-       // qDebug() << qrand() % 10000;
+        peer->UID = QString::number(qrand() % 10000);;
         peer->setupDatabase();
         peer->loadPeersFromFile();
         QVBoxLayout *layout = new QVBoxLayout(this);
@@ -642,6 +513,7 @@ public:
         QPushButton *voteButton = new QPushButton("Vote");
         QPushButton *connectBtn = new QPushButton("Connect to Peer");
         QPushButton *Generatewalletbtn = new QPushButton("Generate Wallet");
+        QPushButton *FindTokensbtn = new QPushButton("Generate Wallet");
 
         QPushButton *transferBtn = new QPushButton("Transfer");
 
@@ -710,6 +582,7 @@ public:
         layout->addWidget(splitter3);
 
         layout->addWidget(generateTokens);
+         layout->addWidget(FindTokensbtn);
 
         QObject::connect(candidateBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [=](int index){
@@ -792,6 +665,10 @@ public:
 
         connect(connectBtn, &QPushButton::clicked, this, [=]() {
             peer->connectToPeer(peerInput->text());
+        });
+
+        connect(FindTokensbtn, &QPushButton::clicked, this, [=]() {
+    peer->findMyVotes(candidateBox->currentText());
         });
     }
 
