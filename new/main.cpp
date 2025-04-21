@@ -16,6 +16,8 @@
 
 //maybe TOTP verification can be randomized and sent perodically between connected peers
 
+// 2 passwords sender secret and walletID + password. password can decrypt the sender secret or walletId:token hash compare to find all votes
+
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
 
@@ -226,11 +228,11 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
         //check walletID for available tokens compare to amount and send.
         QStringList Test =  getVotes(senderSecret);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
-        QString tokenHash;
-        if (amount==0){ // if sending just existing tokenhash
-            tokenHash == token;//
+        QString tokenHash = token;//
+        if (tokenHash==""){ // if sending just existing tokenhash
+            tokenHash = token;//
         }else{
-            tokenHash == encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
+           // tokenHash = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
         }
         QSqlQuery check;
         check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
@@ -241,7 +243,7 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
      //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
-        QString computedOwnership = xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
+        QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
 
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
