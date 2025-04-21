@@ -519,13 +519,13 @@ public:
         candidateBox = new QComboBox;
         candidateBox->addItems(peer->getCandidates());
 
-        QPushButton *refreshCandidates = new QPushButton("Refresh Candidates");
-        QPushButton *addCandidate = new QPushButton("Add Candidate");
+        QPushButton *refreshCandidates = new QPushButton("Refresh Wallets");
+        QPushButton *addCandidate = new QPushButton("Add Wallet");
         QPushButton *generateTokens = new QPushButton("Generate Tokens");
         QPushButton *voteButton = new QPushButton("Vote");
         QPushButton *connectBtn = new QPushButton("Connect to Peer");
-        QPushButton *Generatewalletbtn = new QPushButton("Generate Wallet");
-        QPushButton *FindTokensbtn = new QPushButton("Generate Wallet");
+        QPushButton *Generatewalletbtn = new QPushButton("Generate WalletName");
+        QPushButton *FindTokensbtn = new QPushButton("Search Wallet");
 
         QPushButton *transferBtn = new QPushButton("Transfer");
 
@@ -563,7 +563,7 @@ public:
         layout->addWidget(candidateBox);
 
         splitter6->addWidget(newCandidateInput);
-        splitter6->addWidget(Generatewalletbtn);
+
         layout->addWidget(splitter6);
 
         splitter7->addWidget(amountEdt);
@@ -585,8 +585,10 @@ public:
         splitter4->addWidget(voteButton);
         layout->addWidget(splitter4);
 
-        splitter5->addWidget(refreshCandidates);
+splitter5->addWidget(Generatewalletbtn);
+        //splitter5->addWidget(refreshCandidates);
         splitter5->addWidget(addCandidate);
+        splitter5->addWidget(FindTokensbtn);
         layout->addWidget(splitter5);
 
         splitter3->addWidget(connectBtn);
@@ -594,7 +596,7 @@ public:
         layout->addWidget(splitter3);
 
         layout->addWidget(generateTokens);
-         layout->addWidget(FindTokensbtn);
+
 
         QObject::connect(candidateBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [=](int index){
@@ -631,6 +633,9 @@ public:
         connect(cleanupTimer, &QTimer::timeout, this, [=]() {
             peer->receivedVoteSources.clear();
             peer->sliceVotes.clear();
+
+            candidateBox->clear();
+            candidateBox->addItems(peer->getCandidates());
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
@@ -638,10 +643,10 @@ public:
              peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
         });
 
-        connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
-            candidateBox->clear();
-            candidateBox->addItems(peer->getCandidates());
-        });
+       // connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
+       //     candidateBox->clear();
+       //     candidateBox->addItems(peer->getCandidates());
+       // });
 
         connect(addCandidate, &QPushButton::clicked, this, [=]() {
             bool ok;
@@ -682,7 +687,7 @@ public:
         });
 
         connect(FindTokensbtn, &QPushButton::clicked, this, [=]() {
-            peer->findMyVotes(candidateBox->currentText());
+            peer->findMyVotes(ewalletID);//candidateBox->currentText());
         });
     }
 
