@@ -117,28 +117,6 @@ public:
         requestingPeer->write(QString("SYNC_TIME|%1\n").arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
     }
 
-    QString generateRandomToken(int length = 12) {
-        const QString chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        QString token;
-        for (int i = 0; i < length; ++i) {
-            int index = QRandomGenerator::global()->bounded(chars.length());
-            token += chars.at(index);
-        }
-        return token;
-    }
-
-    QString generateTokenPool2() {
-      //  QSqlQuery query;
-       // for (int i = 0; i < count; ++i) {
-            QString raw = QString::number(QRandomGenerator::global()->generate64());
-            QString hash = QString(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex());
-         //   query.prepare("INSERT INTO tokens (token, used) VALUES (?, 0);");
-          //  query.addBindValue(hash);
-       //     query.exec();
-      //  }
-            return hash;
-    }
-
     bool isValidToken(const QString &token) {
         QString hash = hashToken(token);
         QSqlQuery q;
@@ -202,7 +180,7 @@ public:
             }
             out << "GENESIS:" << UID.toInt() << ",\n";
         }
-broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
+        broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     }
 
     QStringList getVotes(QString walletID) { //gets them from wallets instead of votes list
@@ -217,6 +195,7 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
             //might not need this if it puts the second encrypted otp in the findmyvotes function //
           //  QString otpenc = query.value(1).toString();
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(otpenc.toUtf8())), walletID);  // → original
+            verifyOwnership(query.value(1).toString(),ewalletID);
             // Check if it matches walletID
            // if (decrypted.startsWith(walletID + ":")) {
             //    .append(tokenHash); // or store whole record
@@ -248,9 +227,9 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
         QString currentEncryptedOwner = check.value(0).toString();
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
 
-     //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
+       // QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
        // QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
-QString computedOwnership = encryptOwnership(senderSecret,ewalletID);
+        QString computedOwnership = encryptOwnership(senderSecret,ewalletID);
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
@@ -270,9 +249,7 @@ QString computedOwnership = encryptOwnership(senderSecret,ewalletID);
     }
 
 
-    QString hashToken(const QString &token) {
-        return QString(QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex());
-    }
+
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");

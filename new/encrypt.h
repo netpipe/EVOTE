@@ -127,3 +127,29 @@ void loadPeersFromFile() {
     }
 }
 
+QString generateRandomToken(int length = 12) {
+    const QString chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    QString token;
+    for (int i = 0; i < length; ++i) {
+        int index = QRandomGenerator::global()->bounded(chars.length());
+        token += chars.at(index);
+    }
+    return token;
+}
+
+QString generateTokenPool2() {
+  //  QSqlQuery query;
+   // for (int i = 0; i < count; ++i) {
+        QString raw = QString::number(QRandomGenerator::global()->generate64());
+        QString hash = QString(QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex());
+     //   query.prepare("INSERT INTO tokens (token, used) VALUES (?, 0);");
+      //  query.addBindValue(hash);
+   //     query.exec();
+  //  }
+        return hash;
+}
+
+QString hashToken(const QString &token) {
+    return QString(QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
