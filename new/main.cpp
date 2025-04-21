@@ -14,6 +14,8 @@
 //todo
 // otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 
+//maybe TOTP verification can be randomized and sent perodically between connected peers
+
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
 
@@ -51,13 +53,13 @@ public:
 
     }
 
-    void broadcastVote(const QString &candidate, const QString &token) {
+    void broadcastVote(const QString &candidate, const QString &token,QString walletID) {
         QString message = QString("VOTE|%1|%2\n").arg(candidate, token);
         for (QTcpSocket *peer : peers) {
             peer->write(message.toUtf8());
         }
         qDebug() << "voting";
-        handleVote(candidate, token,generateOneTimeToken(candidate,token));
+        handleVote(candidate, token,generateOneTimeToken(candidate,walletID));
     }
 
     void syncVotesToAllPeers() {
@@ -188,11 +190,11 @@ public:
                 q.addBindValue(tokenHash);
                 q.exec();
                 out << token << ",\n";
-                broadcastVote("",tokenHash);
+                broadcastVote("",tokenHash,"");
             }
             out << "GENESIS:" << UID.toInt() << ",\n";
         }
-broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
+broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
     }
 
     QString encryptCandidate(const QString &candidate, const QString &walletID) {
@@ -486,20 +488,28 @@ private slots:
 
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash;
+        QString walletID;
         QString finalCandidate;
 
-        //if ott is blank then candidate is the walletID encrypted OTP
+        hash=token;
+        //if ott is blank then candidate is the walletID encrypted OTP // could be synchash or initial votes add
          if (candidate != ""){
-            finalCandidate = ott;//candidate;
-            hash=token;
-         }else{
+             if (ott == ""){   //SYNC_HASH
+               finalCandidate = candidate;
+               walletID = candidate;
+               //finalCandidate = encryptCandidate(ott, walletID);
+             }else{ // check ott for candidate if candidate blank.
+                 finalCandidate = ott;//candidate;
+                 if (!isValidCandidate(finalCandidate) && candidate != "") return;
+             }
+         }else{ // if candidate blank use ott
             hash = hashToken(token);
             finalCandidate = ott;//candidate;
+            if (!isValidCandidate(finalCandidate) && candidate != "") return;
          }
 
        // if (!isValidToken(token) && candidate != "") return;
       // if (!isValidTokenHash(finalCandidate) && candidate != "") return;
-        if (!isValidCandidate(finalCandidate) && candidate != "") return;
 
            // if (!ott.isEmpty()) {
              //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
@@ -777,7 +787,7 @@ public:
         });
 
         connect(voteButton, &QPushButton::clicked, this, [=]() {
-            peer->broadcastVote(candidateBox->currentText(), tokenInput->text());
+            peer->broadcastVote(candidateBox->currentText(), tokenInput->text(),candidateBox->currentText());
         });
 
         connect(connectBtn, &QPushButton::clicked, this, [=]() {
