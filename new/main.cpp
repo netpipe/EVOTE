@@ -445,7 +445,9 @@ private slots:
 
             // Decrypt candidate field
            //QString decrypted = decryptCandidate(encCandidate, tokenHash); // You’ll define this maybe we'll use XOR for speed
-            QString decrypted = xorStrings(encCandidate,walletID);
+            //QString decrypted = xorStrings(encCandidate,walletID);
+            QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
+
             // Check if it matches walletID
             if (decrypted.startsWith(walletID + ":")) {
                 myTokens.append(tokenHash); // or store whole record
@@ -542,9 +544,9 @@ private slots:
             result[i] = a[i] ^ b[i];
         }
 
-      //  return QString(result.toHex()); // return hex for readability
-        return QString::fromUtf8(result);
-
+        return QString(result.toHex()); // return hex for readability
+     //   return QString::fromUtf8(result);
+       // return hexOutput ? QString(result.toHex()) : QString::fromUtf8(result);
     }
 
     QString currentVoteHash() {
