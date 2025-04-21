@@ -12,9 +12,7 @@
 #include "totp.h"
 
 //todo
-//generate 2 otp numbers keep one and send the other for encryption and keep the other for redemption verification + has your ewallet id in it
-
-//decrypt original token then reencrypt during transfers instead of just using hashes.
+// otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 
 QString sharedSecret = "JBSWY3DPEHPK3PXP"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
@@ -69,6 +67,7 @@ public:
     }
 
     void syncVotes(QTcpSocket *requestingPeer) {
+
 
         QSqlQuery q("SELECT candidate, token FROM votes;");
         while (q.next()) {
@@ -236,8 +235,8 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
         QString generatedCode = totp.generateTOTP();
        // qDebug() << "Generated TOTP Code: " << generatedCode;
 
-       // generatedCode = encryptCandidate (walletID +":" + generatedCode,tokenHash);
-        generatedCode = xorStrings(walletID + ":" + generatedCode,sharedSecret);
+        generatedCode = encryptCandidate (generatedCode,walletID);
+       // generatedCode = xorStrings(walletID + ":" + generatedCode,sharedSecret);
         return generatedCode;
     }
 
@@ -251,13 +250,13 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
             Test.append(query.value(1).toString());
 
             //might not need this if it puts the second encrypted otp in the findmyvotes function //
-            QString otpenc = query.value(1).toString();
-            QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(otpenc.toUtf8())), walletID);  // → original
+          //  QString otpenc = query.value(1).toString();
+           // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(otpenc.toUtf8())), walletID);  // → original
             // Check if it matches walletID
-            if (decrypted.startsWith(walletID + ":")) {
+           // if (decrypted.startsWith(walletID + ":")) {
             //    .append(tokenHash); // or store whole record
                             //get second half of otp
-            }
+           // }
 
             //return query.value(0).toInt(); // Return the number of remaining tokens
         }
@@ -424,7 +423,7 @@ private slots:
                 QString key = parts[1] + "|" + parts[2]; // candidate|token
                 receivedVoteSources[key].insert(socket->peerAddress().toString());
                 if (receivedVoteSources[key].size() >= 3) {
-                    handleVote(parts[1], parts[2],generateOneTimeToken(parts[1]+parts[2],parts[2])); // Only accept after 3 peers agree could be higher
+                    handleVote(parts[1], parts[2],""); // Only accept after 3 peers agree could be higher
                 }
             } else if (parts[0] == "HASH_SLICE" && parts.size() == 3) {
                 int index = parts[1].toInt();
@@ -469,15 +468,17 @@ private slots:
             QString tokenHash = q.value(1).toString();
 
             // Decrypt candidate field
-           //QString decrypted = decryptCandidate(encCandidate, tokenHash); // You’ll define this maybe we'll use XOR for speed
+           QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
             //QString decrypted = xorStrings(encCandidate,walletID);
-            QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
+           // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
             // Check if it matches walletID
-            if (decrypted.startsWith(walletID + ":")) {
+            if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
                 myTokens.append(tokenHash); // or store whole record
             }
         }
+
+        //OTP list of tokens
 
         //optionally add them to your own wallets here without returning
         return myTokens;
@@ -486,6 +487,8 @@ private slots:
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash;
         QString finalCandidate;
+
+        //if ott is blank then candidate is the walletID encrypted OTP
          if (candidate != ""){
             finalCandidate = ott;//candidate;
             hash=token;
