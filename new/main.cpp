@@ -54,13 +54,13 @@ public:
 
     }
 
-    void broadcastVote(const QString &candidate, const QString &token,QString walletID) {
+    void broadcastVote(const QString &candidate, const QString &token) {
         QString message = QString("VOTE|%1|%2\n").arg(candidate, token);
         for (QTcpSocket *peer : peers) {
             peer->write(message.toUtf8());
         }
         qDebug() << "voting";
-        handleVote(candidate, token,generateOneTimeToken(candidate,walletID));
+        handleVote(candidate, token,generateOneTimeToken(candidate,token));
     }
 
     void syncVotesToAllPeers() {
@@ -190,11 +190,11 @@ public:
                 q.addBindValue(tokenHash);
                 q.exec();
                 out << token << ",\n";
-                broadcastVote("",tokenHash,"");
+                broadcastVote("",tokenHash);
             }
             out << "GENESIS:" << UID.toInt() << ",\n";
         }
-broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
+broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     }
 
     QStringList getVotes(QString walletID) { //gets them from wallets instead of votes list
@@ -657,7 +657,7 @@ public:
         });
 
         connect(voteButton, &QPushButton::clicked, this, [=]() {
-            peer->broadcastVote(candidateBox->currentText(), tokenInput->text(),candidateBox->currentText());
+            peer->broadcastVote(candidateBox->currentText(), tokenInput->text());
         });
 
         connect(connectBtn, &QPushButton::clicked, this, [=]() {
