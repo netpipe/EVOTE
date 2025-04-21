@@ -75,8 +75,8 @@ bool verifyOwnership(const QString &candidateField, const QString &walletSecret)
 
 QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {
     //decrypt the one time token from the token later
-//    QString sharedSecret = tokenHash; // Example shared secret (Base32 encoded)
-    TOTP totp(sharedSecret,SHA256);
+    QString sharedSecret2 = tokenHash; // Example shared secret (Base32 encoded)
+    TOTP totp(sharedSecret2,SHA256);
 
     QString generatedCode = totp.generateTOTP();
    // qDebug() << "Generated TOTP Code: " << generatedCode;

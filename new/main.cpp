@@ -71,7 +71,6 @@ public:
 
     void syncVotes(QTcpSocket *requestingPeer) {
 
-
         QSqlQuery q("SELECT candidate, token FROM votes;");
         while (q.next()) {
             QString line = QString("VOTE|%1|%2\n").arg(q.value(0).toString(), q.value(1).toString());
@@ -141,7 +140,7 @@ public:
     }
 
     bool isValidCandidate(const QString &token) { //check if is used too
-        QString hash = hashToken(token);
+      //  QString hash = hashToken(token);
         QSqlQuery q;
         q.prepare("SELECT candidate FROM votes WHERE candidate = ?;");
         q.addBindValue(hash);
@@ -149,7 +148,7 @@ public:
     }
 
     bool isValidTokenHash(const QString &token) {
-        QString hash = hashToken(token);
+      //  QString hash = hashToken(token);
         QSqlQuery q;
         q.prepare("SELECT token_hash FROM votes WHERE token_hash = ?;");
         q.addBindValue(hash);
@@ -252,7 +251,7 @@ broadcastVote("SYNC_HASH",currentVoteHash(),"");// broadcast votehash
         update.addBindValue(tokenHash);
         update.exec();
 
-        syncVotesToAllPeers();
+        syncVotesToAllPeers(); // maybe just broascast vote and only sync if issues or amount is over 10 ?
     }
 
 
@@ -383,17 +382,17 @@ private slots:
                         socket->disconnectFromHost();  // or flag the peer
                     }
                 }
-            } else if (parts[0] == "TRANSFER" && parts.size() == 5) {
+            } else if (parts[0] == "TRANSFER" && parts.size() == 5) { // from , to , token
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
-                TOTP totp(sharedSecret,SHA256,30);
+                TOTP totp(parts[2],SHA256,30);
 
                 bool isValid = totp.verifyTOTP(parts[4]);
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
                 if (isValid){
                     //handleVote();//
-                    //transferVote(from, to, token);
+                    handleTransfer(token,from, to,1);
                 }
             }
 
@@ -425,10 +424,6 @@ private slots:
        // if (!isValidToken(token) && candidate != "") return;
       // if (!isValidTokenHash(finalCandidate) && candidate != "") return;
 
-           // if (!ott.isEmpty()) {
-             //   finalCandidate = encryptCandidate(candidate + ":" + ott, token);
-          //  }
-
         QSqlQuery insert;
         insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
         insert.addBindValue(finalCandidate);
@@ -458,9 +453,7 @@ private slots:
         }
     }
 
-
-
-    QString currentVoteHash() {// select all but currentvotehash from votes candidate field
+    QString currentVoteHash() {
        // QSqlQuery q("SELECT candidate, token_hash FROM votes ORDER BY candidate, token_hash");
         QSqlQuery q("SELECT candidate, token_hash FROM votes WHERE candidate IS NOT NULL AND candidate != '' AND candidate != 'SYNC_HASH' ORDER BY candidate, token_hash;");
 
@@ -468,7 +461,7 @@ private slots:
         while (q.next()) {
             data.append(q.value(0).toString() + q.value(1).toString());
         }
-        qDebug() << 'test';
+
         return QString(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     }
 
@@ -630,9 +623,7 @@ public:
         });
 
         connect(addCandidate, &QPushButton::clicked, this, [=]() {
-            //choose password
             bool ok;
-            // Ask for birth date as a string.
             QString text = QInputDialog::getText(0, "Password",
                                                  "New Password:", QLineEdit::Normal,
                                                  "", &ok);
@@ -646,12 +637,14 @@ public:
 
             }
 
-            QString  fileName= QFileDialog::getSaveFileName(0, "Save userfile", QCoreApplication::applicationDirPath(), "txt (*.txt);" );
-            QFile file(fileName);
-            if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                QTextStream out(&file);
-                out << name << ":" << text << "\n";
-}
+            if (0){ //save password
+                QString  fileName= QFileDialog::getSaveFileName(0, "Save userfile", QCoreApplication::applicationDirPath(), "txt (*.txt);" );
+                QFile file(fileName);
+                if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                    QTextStream out(&file);
+                    out << name << ":" << text << "\n";
+                }
+            }
 
         });
 
@@ -668,7 +661,7 @@ public:
         });
 
         connect(FindTokensbtn, &QPushButton::clicked, this, [=]() {
-    peer->findMyVotes(candidateBox->currentText());
+            peer->findMyVotes(candidateBox->currentText());
         });
     }
 
