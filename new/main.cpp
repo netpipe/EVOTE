@@ -253,14 +253,17 @@ QString computedOwnership = encryptOwnership(senderSecret);
             return;
         }
 
-        QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
+       // QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
+        QString newEncryptedOwner =  encryptOwnership(receiverSecret); //encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
         update.addBindValue(tokenHash);
         update.exec();
 
-        syncVotesToAllPeers(); // maybe just broascast vote and only sync if issues or amount is over 10 ?
+       // syncVotesToAllPeers(); // maybe just broascast vote and only sync if issues or amount is over 10 ?
+
+        broadcastVote(receiverSecret,tokenHash);
     }
 
 
