@@ -240,7 +240,8 @@ public:
     QStringList getTokensLeft(QString walletID) {
         QSqlQuery query;
         QStringList Test;
-        query.prepare("SELECT tokenID FROM candidates WHERE name = ? ");
+        query.prepare("SELECT * FROM candidates WHERE name = :name");
+        query.bindValue(":name", walletID);
 
         if (query.next()) {
             Test.append(query.value(0).toString());
@@ -253,6 +254,7 @@ public:
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,int amount) {
 
         //check walletID for available tokens compare to amount and send.
+        QStringList Test =  getTokensLeft(senderSecret);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
         QString tokenHash = token;//hashToken(token);
 
@@ -303,7 +305,7 @@ public:
 
     QStringList getCandidates() {
         QStringList list;
-        QSqlQuery query("SELECT name FROM candidates;");
+        QSqlQuery query("SELECT DISTINCT name FROM candidates;");
         while (query.next()) {
             list << query.value(0).toString();
         }
@@ -684,6 +686,25 @@ public:
         layout->addWidget(splitter3);
 
         layout->addWidget(generateTokens);
+
+
+        QCommandLineParser parser;
+        parser.setApplicationDescription("Decentralized");
+        parser.addHelpOption();
+        parser.addVersionOption();
+
+        QCommandLineOption voteOpt("headless", "Run without GUI");
+        QCommandLineOption generateOpt("headless", "Run without GUI");
+        QCommandLineOption transferOpt("headless", "Run without GUI");
+        QCommandLineOption getBalanceOpt("headless", "Run without GUI");
+       // QCommandLineOption headlessOpt("headless", "Run without GUI");
+       // QCommandLineOption headlessOpt("headless", "Run without GUI");
+
+        parser.addOption(voteOpt);
+
+        if (parser.isSet(voteOpt)) {
+
+            qDebug() << "vote.";   }
 
 
         connect(Generatewalletbtn, &QPushButton::clicked, this, [=]() {
