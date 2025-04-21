@@ -616,6 +616,13 @@ splitter5->addWidget(Generatewalletbtn);
         });
         cleanupTimer->start(300000); // Clear every 5 minutes
 
+       // candidateBox->addItems(peer->getCandidates());
+        if (!candidateBox->size().isEmpty() ){
+        candidateBox->setCurrentIndex(1);
+        candidateBox->setCurrentIndex(0);
+       // candidateBox->setCurrentIndex(0);
+        }
+
         connect(generateTokens, &QPushButton::clicked, this, [=]() {
              peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
         });
