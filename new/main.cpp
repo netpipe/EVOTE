@@ -751,10 +751,9 @@ public:
             QString text = QInputDialog::getText(0, "Password",
                                                  "New Password:", QLineEdit::Normal,
                                                  "", &ok);
-            if (ok && !text.isEmpty()) {
-
-
             QString name = peer->encryptCandidate(newCandidateInput->text(), text);
+
+            if (ok && !text.isEmpty()) {
             QSqlQuery q;
             q.prepare("INSERT INTO candidates (name) VALUES (?);");
             q.addBindValue(name);
@@ -762,11 +761,11 @@ public:
 
             }
 
-            QString  fileName= QFileDialog::getSaveFileName(0, "Save tokens CSV file", QCoreApplication::applicationDirPath(), "CSV (*.csv);" );
+            QString  fileName= QFileDialog::getSaveFileName(0, "Save userfile", QCoreApplication::applicationDirPath(), "txt (*.txt);" );
             QFile file(fileName);
             if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 QTextStream out(&file);
-                out << text << "\n";
+                out << name << ":" << text << "\n";
 }
 
         });
