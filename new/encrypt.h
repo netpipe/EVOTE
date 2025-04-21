@@ -65,12 +65,12 @@ QString decryptCandidate(const QString &encrypted, const QString &walletID) {
 }
 
 
-QString encryptOwnership(const QString &walletSecret) {
-    return QString(QCryptographicHash::hash(("owned" + walletSecret).toUtf8(), QCryptographicHash::Sha256).toHex());
+QString encryptOwnership(const QString &walletSecret,QString wallet2) {
+    return QString(QCryptographicHash::hash((wallet2 + walletSecret).toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 
-bool verifyOwnership(const QString &candidateField, const QString &walletSecret) {
-    return candidateField == encryptOwnership(walletSecret);
+bool verifyOwnership(const QString &candidateField,QString wallet2) {
+    return candidateField == encryptOwnership(candidateField,wallet2);
 }
 
 QString generateOneTimeToken(const QString &walletID, const QString &tokenHash) {

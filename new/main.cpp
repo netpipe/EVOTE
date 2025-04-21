@@ -11,6 +11,9 @@
 #include <qaesencryption.h>
 #include "totp.h"
 
+QString walletID;
+QString ewalletID;
+int ctokens;
 //todo
 // otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 
@@ -229,7 +232,7 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,int amount) {
 
         //check walletID for available tokens compare to amount and send.
-        QStringList Test =  getVotes(senderSecret);// get walletid tokens left in local wallet
+        QStringList Test =  getVotes(walletID);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
         QString tokenHash = token;//
         if (tokenHash==""){ // if sending just existing tokenhash
@@ -247,14 +250,14 @@ broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
 
      //   QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
        // QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
-QString computedOwnership = encryptOwnership(senderSecret);
+QString computedOwnership = encryptOwnership(senderSecret,ewalletID);
         if (computedOwnership != currentEncryptedOwner) {
             qDebug() << " Ownership verification failed.";
             return;
         }
 
        // QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
-        QString newEncryptedOwner =  encryptOwnership(receiverSecret); //encryptCandidate(receiverSecret,token);
+        QString newEncryptedOwner =  encryptOwnership(receiverSecret,ewalletID); //encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -322,30 +325,33 @@ QString computedOwnership = encryptOwnership(senderSecret);
         return QString(); // no available token
     }
 
-    QStringList findMyVotes(const QString &walletID) {
+    QStringList findMyVotes(const QString &walletID2) {
         QSqlQuery q("SELECT candidate, token_hash FROM votes;");
         QStringList myTokens;
-
+ctokens=0;
         while (q.next()) {
             QString encCandidate = q.value(0).toString();
             QString tokenHash = q.value(1).toString();
 
             // Decrypt candidate field
-           QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
+           QString decrypted = encryptOwnership(tokenHash,walletID2);
+           //QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
             //QString decrypted = xorStrings(encCandidate,walletID);
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
             // Check if it matches walletID
-            if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
+           if(verifyOwnership(encCandidate,walletID2)){
+          //  if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
                 myTokens.append(tokenHash); // or store whole record
+                ctokens++;
             }
         }
 
         //OTP list of tokens
-
         //optionally add them to your own wallets here without returning
         return myTokens;
     }
+
 private slots:
     void handleConnection() {
         QTcpSocket *client = server->nextPendingConnection();
@@ -413,7 +419,7 @@ private slots:
 
     void handleVote(const QString candidate, const QString token,QString ott) { // maybe use qstringlist for multiple tokens
         QString hash;
-        QString walletID;
+        QString walletID3;
         QString finalCandidate;
 
         hash=token;
@@ -421,7 +427,7 @@ private slots:
          if (candidate != ""){
              if (ott == ""){   //SYNC_HASH
                finalCandidate = candidate;
-               walletID = candidate;
+               walletID3 = candidate;
                //finalCandidate = encryptCandidate(ott, walletID);
              }else{ // check ott for candidate if candidate blank.
                  finalCandidate = ott;//candidate;
@@ -448,9 +454,7 @@ private slots:
         }
 
         //it already broadcasted so just do our own addition + hashchecking and new SYNC_HASH compare
-
        // syncVotesToAllPeers(); // overkill for simple vote broadcasting
-
         ///maybe xor the ewalletid by the otp to make searching faster.
     }
 
@@ -596,6 +600,8 @@ public:
             this, [=](int index){
                 QString selected = candidateBox->itemText(index);
                newCandidateInput->setText(selected) ; // You can call with actual selected text
+               walletID= selected;
+               ewalletID= peer->encryptCandidate(selected,walletID);
             });
 
         QCommandLineParser parser;
