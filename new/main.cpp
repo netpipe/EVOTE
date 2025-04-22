@@ -11,28 +11,31 @@
 #include <qaesencryption.h>
 #include "totp.h"
 
+//todo
+//? otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
+//? maybe TOTP verification can be randomized and sent perodically between connected peers
+//? 2 passwords sender secret and walletID + password. password can decrypt the sender secret or walletId:token hash compare to find all votes
+//
+//1 handleTransfer needs amount feature working
+//2 peers sync need testing refinement
+//3
+
 QString walletID;
 QString ewalletID;
 int ctokens;
 QComboBox *candidateBox;
- QCommandLineParser parser;
-
- QCommandLineOption voteOpt("vote", "vote");
- QCommandLineOption generateOpt("generate", "generate");
- QCommandLineOption transferOpt("transfer", "transfer");
- QCommandLineOption getBalanceOpt("balance", "balance");
- QCommandLineOption headlessOpt("headless", "Run without GUI");
- QCommandLineOption walletIDOpt("walletID", "from address");
- QCommandLineOption toOpt("to", "to address");
-//todo
-// otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
-
-//maybe TOTP verification can be randomized and sent perodically between connected peers
-
-// 2 passwords sender secret and walletID + password. password can decrypt the sender secret or walletId:token hash compare to find all votes
 
 QString sharedSecret = "TESTING1234"; // Example shared secret (Base32 encoded) 2FA
 int PORT = 5555;
+
+QCommandLineParser parser;
+QCommandLineOption voteOpt("vote", "vote");
+QCommandLineOption generateOpt("generate", "generate");
+QCommandLineOption transferOpt("transfer", "transfer");
+QCommandLineOption getBalanceOpt("balance", "balance");
+QCommandLineOption headlessOpt("headless", "Run without GUI");
+QCommandLineOption walletIDOpt("walletID", "from address");
+QCommandLineOption toOpt("to", "to address");
 
 class PeerNode : public QObject {
     Q_OBJECT
@@ -666,7 +669,7 @@ public:
 
         connect(transferBtn, &QPushButton::clicked, this, [=]() {
             QMessageBox::StandardButton reply;
-            reply = QMessageBox::question(0, "Question Are You Sure", "Select new token pool ?",
+            reply = QMessageBox::question(0, "Question Are You Sure", "Transfer?",
                                           QMessageBox::Yes|QMessageBox::No);
             if (reply == QMessageBox::Yes) {
              peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
