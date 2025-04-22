@@ -222,16 +222,20 @@ public:
       //  return 0; // In case no tokens are left
     }
 
-    void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,int amount) {
+    void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,QString totp,int amount) {
 
         //check walletID for available tokens compare to amount and send.
         QStringList Test =  getVotes(walletID);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
-        QString tokenHash = token;//
-        if (tokenHash==""){ // if sending just existing tokenhash
-            tokenHash = token;//
+        QString tokenHash;//
+        if (totp==""){ // if sending just existing tokenhash
+            totp = generateOneTimeToken(receiverSecret,token);
+        }
+
+        if (tokenHash==""){
+            tokenHash = token;
         }else{
-           // tokenHash = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
+            tokenHash = hashToken(token); //encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
         }
         QSqlQuery check;
         check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
@@ -250,7 +254,7 @@ public:
         }
 
        // QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
-        QString newEncryptedOwner =  encryptOwnership(receiverSecret,ewalletID); //encryptCandidate(receiverSecret,token);
+        QString newEncryptedOwner =  encryptOwnership(totp,receiverSecret); // receiverSecret aka ewalletID //encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -426,7 +430,7 @@ private slots:
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
                 if (isValid){
                     //handleVote();//
-                    handleTransfer(token,from, to,0);
+                    handleTransfer(token,from, to,parts[4],0);
                 }
             }
 
@@ -680,7 +684,7 @@ public:
             reply = QMessageBox::question(0, "Question Are You Sure", "Transfer?",
                                           QMessageBox::Yes|QMessageBox::No);
             if (reply == QMessageBox::Yes) {
-             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
+             peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,"",amountEdt->text().toInt());
             }
         });
 
