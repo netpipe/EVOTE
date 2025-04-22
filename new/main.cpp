@@ -551,6 +551,7 @@ public:
         QSplitter *splitter5 = new QSplitter;
         QSplitter *splitter6 = new QSplitter;
         QSplitter *splitter7 = new QSplitter;
+        QSplitter *splitter8 = new QSplitter;
 
         QLineEdit *Toaddressedit = new QLineEdit;
         QLineEdit *Fromaddressedit = new QLineEdit;
@@ -562,6 +563,14 @@ public:
         QLabel *Fromlbl = new QLabel;
         QLabel *amountlbl  = new QLabel;
         amountlbl->setText("amount");
+
+        QFrame *line = new QFrame();
+        line->setFrameShape(QFrame::HLine);
+        line->setFrameShadow(QFrame::Sunken);
+
+        QFrame *line2 = new QFrame();
+        line2->setFrameShape(QFrame::HLine);
+        line2->setFrameShadow(QFrame::Sunken);
 
         Tolbl->setText("To Address");
         Fromlbl->setText("From address");
@@ -578,12 +587,21 @@ public:
 
         layout->addWidget(splitter6);
 
-        splitter7->addWidget(amountEdt);
         splitter7->addWidget(amountlbl);
-        layout->addWidget(splitter7);
+        splitter7->addWidget(amountEdt);
+        splitter4->addWidget(splitter7);
 
+        splitter8->addWidget(tokenInput);
+        splitter8->addWidget(voteButton);
+        layout->addWidget(splitter8);
 
-        layout->addWidget(tokenInput);
+        splitter5->addWidget(Generatewalletbtn);
+                //splitter5->addWidget(refreshCandidates);
+        splitter5->addWidget(addCandidate);
+        splitter5->addWidget(FindTokensbtn);
+        layout->addWidget(splitter5);
+
+        layout->addWidget(line);
 
         splitter2->addWidget(Fromlbl);
         splitter2->addWidget(Fromaddressedit);
@@ -594,18 +612,14 @@ public:
         layout->addWidget(splitter);
 
         splitter4->addWidget(transferBtn);
-        splitter4->addWidget(voteButton);
-        layout->addWidget(splitter4);
 
-splitter5->addWidget(Generatewalletbtn);
-        //splitter5->addWidget(refreshCandidates);
-        splitter5->addWidget(addCandidate);
-        splitter5->addWidget(FindTokensbtn);
-        layout->addWidget(splitter5);
+        layout->addWidget(splitter4);
 
         splitter3->addWidget(connectBtn);
         splitter3->addWidget(peerInput);
         layout->addWidget(splitter3);
+
+ layout->addWidget(line2);
 
         layout->addWidget(generateTokens);
 
@@ -650,8 +664,13 @@ splitter5->addWidget(Generatewalletbtn);
        // candidateBox->setCurrentIndex(0);
         }
 
-        connect(generateTokens, &QPushButton::clicked, this, [=]() {
+        connect(transferBtn, &QPushButton::clicked, this, [=]() {
+            QMessageBox::StandardButton reply;
+            reply = QMessageBox::question(0, "Question Are You Sure", "Select new token pool ?",
+                                          QMessageBox::Yes|QMessageBox::No);
+            if (reply == QMessageBox::Yes) {
              peer->handleTransfer(tokenInput->text(), Fromaddressedit->text(), Toaddressedit->text() ,amountEdt->text().toInt());; //
+            }
         });
 
        // connect(refreshCandidates, &QPushButton::clicked, this, [=]() {
