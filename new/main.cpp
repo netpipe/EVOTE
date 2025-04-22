@@ -49,7 +49,7 @@ public:
        // QSslSocket::supportsSsl();
         syncTimer = new QTimer(this);
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
-        syncTimer->start(10000); // Synchronize every 10 seconds
+        syncTimer->start(100000); // Synchronize every 100 seconds
     }
 #include "encrypt.h" // has encryption stuff + save/load peerslist
 
@@ -307,7 +307,7 @@ public:
         return lines;
     }
 
-    QString getUnusedToken(QString walletID) {
+    QString getUnusedToken(QString walletID) { //unfinished
         QSqlQuery query("SELECT tokenID FROM candidates WHERE ;");
         if (query.next()) {
             QString token = query.value(0).toString();
@@ -316,7 +316,7 @@ public:
         return QString(); // no available token
     }
 
-    QStringList findMyVotes(const QString &walletID2) {
+    QStringList findMyTokens(const QString &walletID2) {
         QSqlQuery q("SELECT candidate, token_hash FROM votes;");
         QStringList myTokens;
 ctokens=0;
@@ -597,42 +597,40 @@ public:
 
         splitter6->addWidget(walletIDlbl2);
         splitter6->addWidget(newCandidateInput);
-
-        layout->addWidget(splitter6);
+        layout->addWidget(splitter6);   //
 
         splitter7->addWidget(amountlbl);
         splitter7->addWidget(amountEdt);
-        splitter4->addWidget(splitter7);
+        splitter4->addWidget(splitter7);    //ammount
 
         splitter8->addWidget(tokenInput);
         splitter8->addWidget(voteButton);
-        layout->addWidget(splitter8);
+        layout->addWidget(splitter8);   // Vote
 
         splitter5->addWidget(Generatewalletbtn);
                 //splitter5->addWidget(refreshCandidates);
         splitter5->addWidget(addCandidate);
         splitter5->addWidget(FindTokensbtn);
-        layout->addWidget(splitter5);
+        layout->addWidget(splitter5);   // wallet functions
 
         layout->addWidget(line);
 
         splitter2->addWidget(Fromlbl);
         splitter2->addWidget(Fromaddressedit);
-        layout->addWidget(splitter2);
+        layout->addWidget(splitter2);   //from address
 
         splitter->addWidget(Tolbl);
         splitter->addWidget(Toaddressedit);
-        layout->addWidget(splitter);
+        layout->addWidget(splitter);    //to address
 
         splitter4->addWidget(transferBtn);
-
-        layout->addWidget(splitter4);
+        layout->addWidget(splitter4);   //transfer
 
         splitter3->addWidget(connectBtn);
         splitter3->addWidget(peerInput);
-        layout->addWidget(splitter3);
+        layout->addWidget(splitter3); // peer connect
 
- layout->addWidget(line2);
+        layout->addWidget(line2); //line
 
         layout->addWidget(generateTokens);
 
@@ -708,7 +706,7 @@ public:
         });
 
         connect(FindTokensbtn, &QPushButton::clicked, this, [=]() {
-            peer->findMyVotes(ewalletID);//candidateBox->currentText());
+            peer->findMyTokens(ewalletID);//candidateBox->currentText());
         });
     }
 
