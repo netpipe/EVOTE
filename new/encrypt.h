@@ -105,17 +105,20 @@ void loadPeersFromFile() {
     #else
         QFile file("peers.txt");
     #endif
+       int test=0;
     if (file.open(QIODevice::ReadOnly)) {
         QStringList lines;
         QTextStream in(&file);
         while (!in.atEnd()) {
             QString line = in.readLine().trimmed();
-            if (!line.isEmpty() && !connectedPeers.contains(line)) {
+            if (!line.isEmpty() && !connectedPeers.contains(line) && test < 20) {
                 lines.append(line);
+                test++;
             }
         }
 
         // Shuffle to avoid same peer order on every startup
+        //maybe connect to random peer then send their peers list or 3 from each
         auto rng = QRandomGenerator::global(); // This is the engine
         std::shuffle(lines.begin(), lines.end(), *rng);
 

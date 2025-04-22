@@ -46,6 +46,7 @@ public:
         server = new QTcpServer(this);
         connect(server, &QTcpServer::newConnection, this, &PeerNode::handleConnection);
         server->listen(QHostAddress::Any, PORT);
+       // QSslSocket::supportsSsl();
         syncTimer = new QTimer(this);
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
         syncTimer->start(10000); // Synchronize every 10 seconds
@@ -62,7 +63,7 @@ public:
         connect(socket, &QTcpSocket::readyRead, this, [=]() { handleData(socket); });
         connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
         peers.append(socket);
-        connectedPeers.insert(address);
+        connectedPeers.insert(address); //check if peers still connected later
         savePeersToFile();
         for (const QString &peer : connectedPeers) {
             socket->write(QString("PEER|%1\n").arg(peer).toUtf8());
@@ -555,6 +556,7 @@ public:
         QSplitter *splitter6 = new QSplitter;
         QSplitter *splitter7 = new QSplitter;
         QSplitter *splitter8 = new QSplitter;
+        QSplitter *splitter9 = new QSplitter;
 
         QLineEdit *Toaddressedit = new QLineEdit;
         QLineEdit *Fromaddressedit = new QLineEdit;
@@ -565,7 +567,11 @@ public:
         QLabel *Tolbl = new QLabel;
         QLabel *Fromlbl = new QLabel;
         QLabel *amountlbl  = new QLabel;
+        QLabel *walletIDlbl  = new QLabel;
+        QLabel *walletIDlbl2  = new QLabel;
         amountlbl->setText("amount");
+        walletIDlbl->setText("WalletID");
+        walletIDlbl2->setText("Generated WalletID or Name");
 
         QFrame *line = new QFrame();
         line->setFrameShape(QFrame::HLine);
@@ -584,8 +590,12 @@ public:
         peerInput = new QLineEdit;
         peerInput->setPlaceholderText("Peer IP Address");
 
-        layout->addWidget(candidateBox);
+        splitter9->addWidget(walletIDlbl);
+        splitter9->addWidget(candidateBox);
 
+         layout->addWidget(splitter9);
+
+        splitter6->addWidget(walletIDlbl2);
         splitter6->addWidget(newCandidateInput);
 
         layout->addWidget(splitter6);
