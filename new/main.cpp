@@ -319,7 +319,7 @@ public:
     QStringList findMyTokens(const QString &walletID2) {
         QSqlQuery q("SELECT candidate, token_hash FROM votes;");
         QStringList myTokens;
-ctokens=0;
+        ctokens=0;
         while (q.next()) {
             QString encCandidate = q.value(0).toString();
             QString tokenHash = q.value(1).toString();
@@ -420,7 +420,7 @@ private slots:
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
-                TOTP totp(parts[2],SHA256,30);
+                TOTP totp(parts[3],SHA256,30);
 
                 bool isValid = totp.verifyTOTP(parts[4]);
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
