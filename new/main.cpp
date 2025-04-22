@@ -197,11 +197,12 @@ public:
         broadcastVote("SYNC_HASH",currentVoteHash());// broadcast votehash
     }
 
-    QStringList getVotes(QString walletID) { //gets them from wallets instead of votes list
+    QStringList getVotes(QString walletID2) { //gets them from wallets instead of votes list
         QSqlQuery query;
         QStringList Test;
+        //maybe use walletID to decrypt the secondary TOPT to claim tokens ?
         query.prepare("SELECT * FROM candidates WHERE name = :name");
-        query.bindValue(":name", walletID);
+        query.bindValue(":name", walletID2);
 
         if (query.next()) {
             Test.append(query.value(1).toString());
@@ -209,7 +210,7 @@ public:
             //might not need this if it puts the second encrypted otp in the findmyvotes function //
           //  QString otpenc = query.value(1).toString();
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(otpenc.toUtf8())), walletID);  // → original
-            verifyOwnership(query.value(1).toString(),ewalletID);
+            verifyOwnership(query.value(0).toString(),query.value(1).toString(),walletID2); // name aka walletID , totp , your ewalletid
             // Check if it matches walletID
            // if (decrypted.startsWith(walletID + ":")) {
             //    .append(tokenHash); // or store whole record
@@ -225,7 +226,7 @@ public:
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,QString totp,int amount) {
 
         //check walletID for available tokens compare to amount and send.
-        QStringList Test =  getVotes(walletID);// get walletid tokens left in local wallet
+        QStringList Test =  getVotes(ewalletID);// get walletid tokens left in local wallet
         //secret = walletid + TOTP
         QString tokenHash;//
         if (totp==""){ // if sending just existing tokenhash
@@ -328,19 +329,30 @@ public:
             QString encCandidate = q.value(0).toString();
             QString tokenHash = q.value(1).toString();
 
-            // Decrypt candidate field
-           QString decrypted = encryptOwnership(tokenHash,walletID2);
+            // Decrypt candidate field walletID encrypted TOTP
+         //  QString decrypted = encryptOwnership(encCandidate,walletID2);
            //QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
             //QString decrypted = xorStrings(encCandidate,walletID);
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
+
             // Check if it matches walletID
-           if(verifyOwnership(encCandidate,walletID2)){
+           if(verifyOwnership(encCandidate,"owner",walletID2)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+
+               QSqlQuery q;
+               q.prepare("INSERT INTO candidates (name) (token_hash) VALUES (?);");
+               q.addBindValue(encCandidate);
+               q.addBindValue(tokenHash);
+               if (q.exec()) {}
+
           //  if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
-                myTokens.append(tokenHash); // or store whole record
+               // myTokens.append(tokenHash); // or store whole record
                 ctokens++;
             }
         }
+
+
+
 
         //OTP list of tokens
         //optionally add them to your own wallets here without returning
