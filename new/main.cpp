@@ -361,7 +361,7 @@ public:
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
             // Check if it matches walletID
-             if(HOTPVerify(TOTP,encCandidate,encryptOwnership(walletID2,TOTP))){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+             if(HOTPVerify(encCandidate,encryptOwnership(walletID2,TOTP),TOTP)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
 
                QSqlQuery q;
                q.prepare("INSERT INTO candidates (name) (token_hash) (TOTP) VALUES (?);");
@@ -370,16 +370,12 @@ public:
                q.addBindValue(TOTP);
 
                if (q.exec()) {}
-
           //  if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
                 myTokens.append(tokenHash); // or store whole record
                 ctokens++;
                //}
                 }
         }
-
-        //OTP list of tokens
-        //optionally add them to your own wallets here without returning
         return myTokens;
     }
 
@@ -512,7 +508,7 @@ private slots:
             finalCandidate = hotpSha256.generateOTP(encryptOwnership(candidate,ott)); //ewalletID:TOPT provides user and protection for more security it could be hashed
 
             // check if token valid
-            if (!isValidTokenHash(finalCandidate) && candidate != "") return;
+            if (!isValidTokenHash(hash) && candidate != "") return;
          }
 
 
