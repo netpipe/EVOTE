@@ -260,16 +260,6 @@ public:
             tokenHash = hashToken(token); //encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret);//hashToken(token);
         }
 
-
-// Using SHA-256 (stronger)
-StringHOTP test(totp, StringHOTP::SHA1,9);
-QString otpSha256 = test.generateOTP(input); //ewalletID:TOPT provides user and protection for more security it could be hashed
-//qDebug() << "SHA-256 OTP:" << otpSha256;
-// QString otpSha2562 = hotpSha256.generateOTP(otpSha256);
-
-//HOTPVerify(totp,otpSha256,input);
-
-
         QSqlQuery check;
         check.prepare("SELECT candidate FROM votes WHERE token_hash = ?;");
         check.addBindValue(tokenHash);
@@ -281,9 +271,9 @@ QString otpSha256 = test.generateOTP(input); //ewalletID:TOPT provides user and 
        // QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
        // QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
 
-        QString computedOwnership = encryptOwnership(senderSecret,ewalletID);
+        QString computedOwnership = encryptOwnership(ewalletID,totp);
 
-        if ( HOTPVerify(totp,check.value(0).toString(),ewalletID+":"+totp)) {// use your ewalletid:totp as compare input
+        if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {// use your ewalletid:totp as compare input
             qDebug() << " Ownership verification failed.";
             return;
         }
@@ -369,17 +359,16 @@ QString otpSha256 = test.generateOTP(input); //ewalletID:TOPT provides user and 
            //QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
             //QString decrypted = xorStrings(encCandidate,walletID);
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
-            StringHOTP test(TOTP, StringHOTP::SHA1,9);
-            QString otpSha256 = test.generateOTP(walletID2+":"+TOTP);
 
             // Check if it matches walletID
-  //         if(verifyOwnership(encCandidate,encryptCandidate(tokenHash, walletID),walletID2)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
-               if(encCandidate == otpSha256){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+             if(HOTPVerify(TOTP,encCandidate,encryptOwnership(walletID2,TOTP))){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
 
                QSqlQuery q;
-               q.prepare("INSERT INTO candidates (name) (token_hash) VALUES (?);");
+               q.prepare("INSERT INTO candidates (name) (token_hash) (TOTP) VALUES (?);");
                q.addBindValue(encCandidate);
                q.addBindValue(tokenHash);
+               q.addBindValue(TOTP);
+
                if (q.exec()) {}
 
           //  if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
@@ -419,12 +408,12 @@ QString otpSha256 = test.generateOTP(input); //ewalletID:TOPT provides user and 
         }
     }
 
-    bool HOTPVerify(QString secret2, QString string,QString Password){
+    bool HOTPVerify(QString original, QString test,QString Password){
             //verify
-            StringHOTP verifier(secret2, StringHOTP::SHA1,9);
+            StringHOTP verifier(original, StringHOTP::SHA1,9);
             QString expectedOtp = verifier.generateOTP(Password);
 
-            if (string == expectedOtp) {
+            if (test == expectedOtp) {
                 qDebug() << "OTP valid!";
                 return 1;
             } else {
@@ -481,18 +470,20 @@ private slots:
                         socket->disconnectFromHost();  // or flag the peer
                     }
                 }
-            } else if (parts[0] == "TRANSFER" && parts.size() == 5) { // from , to , token
+            } else if (parts[0] == "TRANSFER" && parts.size() == 6) { // from , to , token
                 QString from = parts[1];
                 QString to = parts[2];
                 QString token = parts[3];
+                int amount = parts[5].toInt();
 
                 TOTP totp(parts[3],SHA256,30);
+
+                // from unlock code compare to old token
 
                 bool isValid = totp.verifyTOTP(parts[4]);
                 qDebug() << "TOTP verification result: " << (isValid ? "Valid" : "Invalid");
                 if (isValid){
-                    //handleVote();//
-                    handleTransfer(token,from, to,parts[4],0);
+                    handleTransfer(token,from, to,parts[4],amount);
                 }
             }
 
@@ -510,22 +501,22 @@ private slots:
              if (ott == ""){   //SYNC_HASH
                finalCandidate = candidate;
                //finalCandidate = encryptCandidate(ott, walletID);
-             }else{ // check ott for candidate if candidate blank.
-                 finalCandidate = ott;//candidate;
-                 if (!isValidCandidate(finalCandidate) && candidate != "") return;
+             }else{ // check ott for candidate if candidate blank. for used
+                 finalCandidate = ott;
+                 //if (!isValidCandidate(finalCandidate) && candidate != "") return;
              }
          }else{ // if candidate blank use ott with your ewalletid
             hash = hashToken(token);
 
-            StringHOTP hotpSha256(secret, StringHOTP::SHA1,9);
-            finalCandidate = hotpSha256.generateOTP(ewalletID+":"+ott); //ewalletID:TOPT provides user and protection for more security it could be hashed
+            StringHOTP hotpSha256(ott, StringHOTP::SHA1,9);
+            finalCandidate = hotpSha256.generateOTP(encryptOwnership(candidate,ott)); //ewalletID:TOPT provides user and protection for more security it could be hashed
 
-          //  finalCandidate = ott;//candidate;
-         //   if (!isValidCandidate(finalCandidate) && candidate != "") return;
+            // check if token valid
+            if (!isValidTokenHash(finalCandidate) && candidate != "") return;
          }
 
-       // if (!isValidToken(token) && candidate != "") return;
-      // if (!isValidTokenHash(finalCandidate) && candidate != "") return;
+
+
 
         QSqlQuery insert;
         insert.prepare("INSERT INTO votes (candidate, token_hash) VALUES (?, ?);");
@@ -702,15 +693,6 @@ public:
         layout->addWidget(line2); //line
 
         layout->addWidget(generateTokens);
-
-        // Using SHA-256 (stronger)
-        StringHOTP hotpSha256(secret, StringHOTP::SHA1,9);
-        QString otpSha256 = hotpSha256.generateOTP(input); //ewalletID:TOPT provides user and protection for more security it could be hashed
-        qDebug() << "SHA-256 OTP:" << otpSha256;
-      // QString otpSha2562 = hotpSha256.generateOTP(otpSha256);
-
-       peer->HOTPVerify(secret,otpSha256,input);
-
 
         if (parser.isSet(voteOpt)) {
             qDebug() << "vote.";   }

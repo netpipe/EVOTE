@@ -65,8 +65,8 @@ QString decryptCandidate(const QString &encrypted, const QString &walletID) {
 }
 
 
-QString encryptOwnership(const QString &walletSecret,QString ewalletID2) { //encrpted TOTP by ewalletID
-    return QString(QCryptographicHash::hash((ewalletID2 + walletSecret).toUtf8(), QCryptographicHash::Sha256).toHex());
+QString encryptOwnership(const QString &ewalletID2,QString totp) { //encrpted TOTP by ewalletID
+    return QString(QCryptographicHash::hash((ewalletID2 + ":" + totp).toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 
 bool verifyOwnership(const QString &owner,QString ETOTP,QString ewalletID2) {
