@@ -44,6 +44,7 @@ bool TOTP::verifyTOTP(const QString &code) const
     // Compare the generated code with the provided code
     return generatedCode == code;
 }
+
 QByteArray TOTP::computeHMAC(const QByteArray &key, const QByteArray &message) const
 {
     QCryptographicHash::Algorithm algo;

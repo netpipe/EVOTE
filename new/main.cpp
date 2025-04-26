@@ -547,6 +547,22 @@ private:
 
 };
 
+
+bool HOTPVerify(QString secret2, QString string,QString Password){
+        //verify
+        StringHOTP verifier(secret2, StringHOTP::SHA1);
+        QString expectedOtp = verifier.generateOTP(Password);
+
+        if (string == expectedOtp) {
+            qDebug() << "OTP valid!";
+            return 1;
+        } else {
+            qDebug() << "Invalid OTP!";
+            return 0;
+        }
+}
+
+
 class VotingApp : public QWidget {
     Q_OBJECT
 
@@ -665,23 +681,11 @@ public:
 
         // Using SHA-256 (stronger)
         StringHOTP hotpSha256(secret, StringHOTP::SHA1);
-        QString otpSha256 = hotpSha256.generateOTP(input);
-     //   qDebug() << "SHA-256 OTP:" << otpSha256;
-     //  QString otpSha2562 = hotpSha256.generateOTP(otpSha256);
+        QString otpSha256 = hotpSha256.generateOTP(input); //ewalletID:TOPT provides user and protection for more security it could be hashed
+        qDebug() << "SHA-256 OTP:" << otpSha256;
+      // QString otpSha2562 = hotpSha256.generateOTP(otpSha256);
 
-        //verify
-        QString submittedOtp = otpSha256; // Simulating submitted code
-        StringHOTP verifier(secret, StringHOTP::SHA1);
-        QString expectedOtp = verifier.generateOTP(input);
-
-        if (otpSha256 == expectedOtp) {
-            qDebug() << "OTP valid!";
-        } else {
-            qDebug() << "Invalid OTP!";
-        }
-
-
-
+       HOTPVerify(secret,otpSha256,input);
 
 
         if (parser.isSet(voteOpt)) {
