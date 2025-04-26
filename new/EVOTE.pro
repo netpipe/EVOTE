@@ -21,6 +21,7 @@ SOURCES += \
     qaesencryption.cpp
 
 HEADERS += \
+    HTOP.h \
     encrypt.h \
   totp.h \
     qaesencryption.h

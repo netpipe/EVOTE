@@ -10,6 +10,7 @@
 #include <QDateTime>
 #include <qaesencryption.h>
 #include "totp.h"
+#include "HTOP.h"
 
 //todo
 //? otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
@@ -19,6 +20,8 @@
 //1 handleTransfer needs amount feature working
 //2 peers sync need testing refinement
 //3
+// maybe use 2 otp's one for storing and keeping the other topt for sending and verifying
+//first to spend token on network basically gets the TOTP into the blockchain first to prevent double spend attacks. prove that you have wallet id with deposit address from it. maybe use shared public key openssl.
 
 QString walletID;
 QString ewalletID;
@@ -26,6 +29,9 @@ int ctokens;
 QComboBox *candidateBox;
 
 QString sharedSecret = "TESTING1234"; // Example shared secret (Base32 encoded) 2FA
+QString secret = "MY_SHARED_SECRET";
+QString input = "MySecondaryPassword";
+
 int PORT = 5555;
 
 QCommandLineParser parser;
@@ -225,8 +231,18 @@ public:
 
     void handleTransfer(const QString &token, const QString &senderSecret, const QString &receiverSecret,QString totp,int amount) {
 
-        //check walletID for available tokens compare to amount and send.
-        QStringList Test =  getVotes(ewalletID);// get walletid tokens left in local wallet
+        QStringList availableTokens;
+        QStringList TTokens;
+        if (amount >=1 ){
+            availableTokens =  getVotes(ewalletID);// get walletid tokens left in local wallet
+            if (availableTokens.size() >= amount){
+                for (int i=0;availableTokens.size() != amount;i++){
+                    TTokens.append(availableTokens[i]);
+                }
+            }
+
+        }
+
         //secret = walletid + TOTP
         QString tokenHash;//
         if (totp==""){ // if sending just existing tokenhash
@@ -272,11 +288,8 @@ public:
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
-    #ifdef __APPLE__s
-        db.setDatabaseName("/Applications/EVOTE.app/Contents/MacOS/peer_voting.db");
-    #else
-        db.setDatabaseName("peer_voting.db");
-    #endif
+        db.setDatabaseName(QCoreApplication::applicationDirPath() + "/peer_voting.db");
+
         db.open();
         QSqlQuery query;
         query.exec("CREATE TABLE IF NOT EXISTS candidates (name TEXT UNIQUE,tokenID TEXT UNIQUE,tokenHash TEXT UNIQUE);");
@@ -322,13 +335,13 @@ public:
     }
 
     QStringList findMyTokens(const QString &walletID2) {
-        QSqlQuery q("SELECT candidate, token_hash FROM votes;");
+        QSqlQuery q("SELECT candidate, token_hash,TOTP FROM votes;");//maybe add encrypted TOTP to votes so that it can verify its ownership
         QStringList myTokens;
         ctokens=0;
         while (q.next()) {
             QString encCandidate = q.value(0).toString();
             QString tokenHash = q.value(1).toString();
-
+            QString TOTP = q.value(2).toString();
             // Decrypt candidate field walletID encrypted TOTP
          //  QString decrypted = encryptOwnership(encCandidate,walletID2);
            //QString decrypted = decryptCandidate(encCandidate, walletID); // You’ll define this maybe we'll use XOR for speed
@@ -337,7 +350,7 @@ public:
 
 
             // Check if it matches walletID
-           if(verifyOwnership(encCandidate,"owner",walletID2)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+           if(verifyOwnership(encCandidate,encryptCandidate(tokenHash, walletID),walletID2)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
 
                QSqlQuery q;
                q.prepare("INSERT INTO candidates (name) (token_hash) VALUES (?);");
@@ -650,14 +663,36 @@ public:
 
         layout->addWidget(generateTokens);
 
-        if (parser.isSet(voteOpt)) {
+        // Using SHA-256 (stronger)
+        StringHOTP hotpSha256(secret, StringHOTP::SHA1);
+        QString otpSha256 = hotpSha256.generateOTP(input);
+     //   qDebug() << "SHA-256 OTP:" << otpSha256;
+     //  QString otpSha2562 = hotpSha256.generateOTP(otpSha256);
 
+        //verify
+        QString submittedOtp = otpSha256; // Simulating submitted code
+        StringHOTP verifier(secret, StringHOTP::SHA1);
+        QString expectedOtp = verifier.generateOTP(input);
+
+        if (otpSha256 == expectedOtp) {
+            qDebug() << "OTP valid!";
+        } else {
+            qDebug() << "Invalid OTP!";
+        }
+
+
+
+
+
+        if (parser.isSet(voteOpt)) {
             qDebug() << "vote.";   }
 
         if (parser.isSet(generateOpt)) {
             qDebug() << "generateOpt.";   }
+
         if (parser.isSet(getBalanceOpt) && parser.isSet(walletIDOpt)) {
             qDebug() << "getBalanceOpt.";   }
+
         if (parser.isSet(transferOpt) && parser.isSet(toOpt) && parser.isSet(walletIDOpt)) {
             qDebug() << "transferOpt.";   }
 
