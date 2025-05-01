@@ -91,6 +91,18 @@ public:
 
     }
 
+    void broadcastTransfer(const QString &candidate, QString receiver,const QString &token,QString &totp) {
+        QString message = QString("TRANSFER|%1|%2|%3|%4\n").arg(candidate,receiver, token,totp);
+        for (QTcpSocket *peer : peers) {
+            peer->write(message.toUtf8());
+        }
+        qDebug() << "Transfering";
+
+        // check weather syncVotes or to do your own SYNC_HASH here
+      //  handleVote(candidate, token,generateOneTimeToken(candidate,token));
+
+    }
+
     void syncVotesToAllPeers() {
         for (QTcpSocket* peer : peers) {
             syncVotes(peer);
@@ -265,25 +277,25 @@ public:
         check.addBindValue(tokenHash);
         if (!check.exec() || !check.next()) return;
 
-        QString currentEncryptedOwner = check.value(0).toString();
+        //QString currentEncryptedOwner = check.value(0).toString();
        // if (!verifyOwnership(currentEncryptedOwner, senderSecret)) return;
-
        // QString computedOwnership = QString(QCryptographicHash::hash((senderSecret + token).toUtf8(), QCryptographicHash::Sha256).toHex());
        // QString computedOwnership = encryptCandidate(generateOneTimeToken(senderSecret,token),senderSecret); //xorStrings(senderSecret,token); //encryptCandidate(senderSecret,token);
+        //QString computedOwnership = encryptOwnership(ewalletID,totp);
+        //  if (computedOwnership != currentEncryptedOwner) {
+        //      qDebug() << " Ownership verification failed.";
+        //      return;
+        //  }
 
-        QString computedOwnership = encryptOwnership(ewalletID,totp);
 
-        if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {// use your ewalletid:totp as compare input
+        if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {
             qDebug() << " Ownership verification failed.";
             return;
         }
-      //  if (computedOwnership != currentEncryptedOwner) {
-      //      qDebug() << " Ownership verification failed.";
-      //      return;
-      //  }
+
 
        // QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
-        QString newEncryptedOwner =  encryptOwnership(totp,receiverSecret); // receiverSecret aka ewalletID //encryptCandidate(receiverSecret,token);
+        QString newEncryptedOwner =  encryptOwnership(receiverSecret,totp); // receiverSecret aka ewalletID //encryptCandidate(receiverSecret,token);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -291,8 +303,7 @@ public:
         update.exec();
 
        // syncVotesToAllPeers(); // maybe just broascast vote and only sync if issues or amount is over 10 ?
-
-        broadcastVote(receiverSecret,tokenHash);
+        broadcastTransfer(check.value(0).toString(),receiverSecret,tokenHash,totp);
     }
 
 
