@@ -12,6 +12,10 @@
 #include "totp.h"
 #include "HTOP.h"
 
+#include <QCoreApplication>
+#include <QDebug>
+#include "rsa.h"
+
 //todo
 //? otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
 //? maybe TOTP verification can be randomized and sent perodically between connected peers
@@ -390,6 +394,15 @@ public:
         return myTokens;
     }
 
+    void sendCandidates(QTcpSocket *client) {
+        QSqlQuery query("SELECT name FROM candidates;");
+        QStringList names;
+        while (query.next()) {
+            names << query.value(0).toString();
+        }
+        client->write("CANDIDATES|" + names.join(",").toUtf8() + "\n");
+    }
+
     bool addWallet(QString Candidate){
         bool ok;
         QString text = QInputDialog::getText(0, "Password",
@@ -444,6 +457,9 @@ private slots:
            // if (parts.size() == 3 && parts[0] == "VOTE") {
            //     receivedVotes.insert(line);
            // } else
+            if (parts.size() == 2 && parts[0] == "GET_CANDIDATES") { //maybe send to main ip input so that vote lists can be established and accepted with reason and toggle box
+             //   sendCandidates(socket);
+            }
             if (parts.size() == 2 && parts[0] == "PEER") {
                 QStringList hostPort = parts[1].split(":");
                 if (hostPort.size() == 2) connectToPeer(hostPort[0], hostPort[1].toInt());
@@ -782,6 +798,21 @@ private:
     PeerNode *peer;
     QLineEdit *newCandidateInput, *tokenInput, *peerInput;
 };
+
+int rsatest() {
+    RSA rsa;
+    RSA::Key pub = rsa.getPublicKey();
+    RSA::Key priv = rsa.getPrivateKey();
+
+    QByteArray message = "Hello, Qt RSA!";
+    QByteArray encrypted = rsa.encrypt(message, pub);
+    QByteArray decrypted = rsa.decrypt(encrypted, priv);
+
+    qDebug() << "Original:" << message;
+    qDebug() << "Decrypted:" << decrypted;
+
+    //return a.exec();
+}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
