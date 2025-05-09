@@ -15,6 +15,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include "rsa.h"
+//encrypt a otp with your public key to verify it later. send private key encrypted signature composed of walletID + otp challange string
 
 //todo
 //? otp:encrypted(otp),token with walletID for challange string they keep otp and find own coins by decrypting and comparing
@@ -60,6 +61,8 @@ public:
         syncTimer = new QTimer(this);
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
         syncTimer->start(100000); // Synchronize every 100 seconds
+        pub = rsa.getPublicKey();
+        priv = rsa.getPrivateKey();
     }
 #include "encrypt.h" // has encryption stuff + save/load peerslist
 
@@ -290,16 +293,23 @@ public:
         //      qDebug() << " Ownership verification failed.";
         //      return;
         //  }
+QString tester = senderSecret +totp;
 
+             QByteArray encrypted = rsa.encrypt(tester.toUtf8(), pub); //sender public key ?
+         //    QByteArray decrypted = rsa.decrypt(encrypted, priv);
 
-        if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {
+       // if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {
+        if ( check.value(0).toString() == encrypted ) {
             qDebug() << " Ownership verification failed.";
             return;
         }
 
 
        // QString newEncryptedOwner =  xorStrings(receiverSecret,token); //encryptCandidate(receiverSecret,token);
-        QString newEncryptedOwner =  encryptOwnership(receiverSecret,totp); // receiverSecret aka ewalletID //encryptCandidate(receiverSecret,token);
+       // QString newEncryptedOwner =  encryptOwnership(receiverSecret,totp); // receiverSecret aka ewalletID //encryptCandidate(receiverSecret,token);
+
+
+        QString newEncryptedOwner =  encrypted;//rsa.encrypt(tester.toUtf8(), pub);
         QSqlQuery update;
         update.prepare("UPDATE votes SET candidate = ? WHERE token_hash = ?;");
         update.addBindValue(newEncryptedOwner);
@@ -361,7 +371,7 @@ public:
         return QString(); // no available token
     }
 
-    QStringList findMyTokens(const QString &walletID2) {
+    QStringList findMyTokens(const QString &walletID2) { //uses private key to decrypt tokens and read ewalletID
         QSqlQuery q("SELECT candidate, token_hash,TOTP FROM votes;");//maybe add encrypted TOTP to votes so that it can verify its ownership
         QStringList myTokens;
         ctokens=0;
@@ -375,9 +385,13 @@ public:
             //QString decrypted = xorStrings(encCandidate,walletID);
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
-            // Check if it matches walletID
-             if(HOTPVerify(encCandidate,encryptOwnership(walletID2,TOTP),TOTP)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+                 QByteArray encrypted = rsa.encrypt(walletID2.toUtf8(), pub);
+                 QByteArray decrypted = rsa.decrypt(encCandidate.toUtf8(), priv);
+                 QString sdecrypt = decrypted;
 
+            // Check if it matches walletID
+           //  if(HOTPVerify(encCandidate,encryptOwnership(walletID2,TOTP),TOTP)){ // maybe use TOTP list that you redeemed and check all of them against each hash slowly narrowing them down or maybe making a map of them too.
+if ( encCandidate == encrypted ) {
                QSqlQuery q;
                q.prepare("INSERT INTO candidates (name) (token_hash) (TOTP) VALUES (?);");
                q.addBindValue(encCandidate);
@@ -385,10 +399,10 @@ public:
                q.addBindValue(TOTP);
 
                if (q.exec()) {}
-          //  if (decrypted.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
+            if (sdecrypt.startsWith(walletID + ":")) {  // if OTP matches then append the token to your wallet list
                 myTokens.append(tokenHash); // or store whole record
                 ctokens++;
-               //}
+               }
                 }
         }
         return myTokens;
@@ -531,8 +545,12 @@ private slots:
          }else{ // if candidate blank use ott with your ewalletid
             hash = hashToken(token);
 
-            StringHOTP hotpSha256(ott, StringHOTP::SHA1,9);
-            finalCandidate = hotpSha256.generateOTP(encryptOwnership(candidate,ott)); //ewalletID:TOPT provides user and protection for more security it could be hashed
+                 QString message = ewalletID+ott;
+                 QByteArray encrypted = rsa.encrypt(message.toUtf8(), pub);
+             //    QByteArray decrypted = rsa.decrypt(encrypted, priv);
+
+            //StringHOTP hotpSha256(ott, StringHOTP::SHA1,9);
+            finalCandidate = encrypted;//hotpSha256.generateOTP(encryptOwnership(candidate,ott)); //ewalletID:TOPT provides user and protection for more security it could be hashed
 
             // check if token valid
             if (!isValidTokenHash(hash) && candidate != "") return;
@@ -598,7 +616,9 @@ private:
     QMap<int, QByteArray> hashSlices;
 
     QTimer *syncTimer;
-
+    RSA rsa;
+    RSA::Key pub;
+    RSA::Key priv;
 };
 
 class VotingApp : public QWidget {
@@ -627,6 +647,11 @@ public:
         QPushButton *FindTokensbtn = new QPushButton("Search Wallet");
 
         QPushButton *transferBtn = new QPushButton("Transfer");
+
+   //     QByteArray message = "Hello, Qt RSA!";
+   //     QByteArray encrypted = rsa.encrypt(message, pub);
+    //    QByteArray decrypted = rsa.decrypt(encrypted, priv);
+
 
         newCandidateInput = new QLineEdit;
         newCandidateInput->setPlaceholderText("New Candidate Name");
@@ -798,21 +823,6 @@ private:
     PeerNode *peer;
     QLineEdit *newCandidateInput, *tokenInput, *peerInput;
 };
-
-int rsatest() {
-    RSA rsa;
-    RSA::Key pub = rsa.getPublicKey();
-    RSA::Key priv = rsa.getPrivateKey();
-
-    QByteArray message = "Hello, Qt RSA!";
-    QByteArray encrypted = rsa.encrypt(message, pub);
-    QByteArray decrypted = rsa.decrypt(encrypted, priv);
-
-    qDebug() << "Original:" << message;
-    qDebug() << "Decrypted:" << decrypted;
-
-    //return a.exec();
-}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
