@@ -25,12 +25,13 @@ HEADERS += \
     encrypt.h \
   totp.h \
   rsa.h\
-    qaesencryption.h
+    qaesencryption.h \
+    sodiumPKE.h \
 
 
 FORMS += \
 
-LIBS += -L/Users/macbook2015/Desktop/brew/lib
+LIBS += -L/Users/macbook2015/Desktop/brew/lib -lsodium
 
 INCLUDEPATH += /Users/macbook2015/Desktop/brew/include /Users/macbook2015/Desktop/brew/lib
 
