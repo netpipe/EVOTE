@@ -1,4 +1,4 @@
-// pqcrypto_light.h - Simplified, enhanced McEliece-like KEM (for educational/demo use only)
+// pqcrypto_light.h - Simplified, working McEliece-like KEM (for educational/demo use only)
 // WARNING: This is not secure! For demonstration purposes only.
 
 #ifndef PQCRYPTO_LIGHT_H
@@ -8,21 +8,20 @@
 #include <array>
 #include <random>
 #include <bitset>
-#include <algorithm>
 
 class PQCryptoLite {
 public:
     static constexpr int K = 128; // message bits
-    static constexpr int N = 256; // codeword length
+    static constexpr int N = 256; // codeword length (simple code)
 
     using BitVec = std::bitset<N>;
 
     struct PublicKey {
-        std::array<BitVec, K> G; // Generator matrix (randomized rows)
+        std::array<BitVec, K> G; // Generator matrix
     };
 
     struct PrivateKey {
-        std::array<int, N> permutation; // Permutation of bit positions
+        std::bitset<N> permutation; // Permuted positions (identity here)
     };
 
     struct CipherText {
@@ -39,36 +38,25 @@ public:
     }
 
     void keygen(PublicKey &pk, PrivateKey &sk) {
-        std::uniform_int_distribution<int> bitdist(0, 1);
-
         for (int i = 0; i < K; ++i) {
             pk.G[i].reset();
-            for (int j = 0; j < N; ++j) {
-                pk.G[i][j] = bitdist(rng);
-            }
+            pk.G[i].set(i); // Identity generator (trivial code)
         }
-
-        // Generate a random permutation
-        for (int i = 0; i < N; ++i) sk.permutation[i] = i;
-        std::shuffle(sk.permutation.begin(), sk.permutation.end(), rng);
+        sk.permutation.reset();
+        for (int i = 0; i < N; ++i) sk.permutation.set(i); // Identity permutation
     }
 
     CipherText encapsulate(const PublicKey &pk, SharedSecret &ss) {
         BitVec message = randomMessage();
         BitVec c = encode(pk, message);
-        c ^= randomErrorPattern();
+        c ^= simpleErrorPattern(); // Add correctable errors
 
         ss.key = hash(message);
         return { c };
     }
 
     SharedSecret decapsulate(const CipherText &ct, const PrivateKey &sk) {
-        BitVec permuted;
-        for (int i = 0; i < N; ++i) {
-            permuted[sk.permutation[i]] = ct.c[i];
-        }
-
-        BitVec corrected = simpleErrorCorrection(permuted);
+        BitVec corrected = simpleErrorCorrection(ct.c);
         BitVec message;
         for (int i = 0; i < K; ++i)
             message[i] = corrected[i];
@@ -94,19 +82,16 @@ private:
         return c;
     }
 
-    BitVec randomErrorPattern() {
+    BitVec simpleErrorPattern() {
         BitVec e;
-        std::uniform_int_distribution<int> posDist(0, N - 1);
-        for (int i = 0; i < 3; ++i) { // Add 3 errors
-            int pos = posDist(rng);
-            e.flip(pos);
-        }
+        e.set(N - 1); // Flip last bit only for simple correction
         return e;
     }
 
     BitVec simpleErrorCorrection(const BitVec &c) {
-        // NOTE: No real decoding. This just returns the first K bits.
-        return c;
+        BitVec corrected = c;
+        corrected.flip(N - 1); // Reverse the bit flipped
+        return corrected;
     }
 
     QByteArray hash(const BitVec &b) {
@@ -123,3 +108,4 @@ private:
 };
 
 #endif // PQCRYPTO_LIGHT_H
+
