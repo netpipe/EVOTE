@@ -24,6 +24,7 @@ HEADERS += \
     HTOP.h \
     encrypt.h \
   totp.h \
+  rsa.h\
     qaesencryption.h
 
 
