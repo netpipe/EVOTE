@@ -11,7 +11,7 @@ public:
     SodiumExample() {
         if (sodium_init() == -1) {
             qCritical() << "libsodium initialization failed!";
-            exit(1);
+         //   exit(1);
         }
     }
 
@@ -37,7 +37,7 @@ public:
                             reinterpret_cast<const unsigned char*>(publicKey.data()),
                             reinterpret_cast<const unsigned char*>(privateKey.data())) != 0) {
             qCritical() << "Encryption failed!";
-            exit(1);
+          //  exit(1);
         }
 
         return ciphertext;
@@ -56,7 +56,7 @@ public:
                                  reinterpret_cast<const unsigned char*>(publicKey.data()),
                                  reinterpret_cast<const unsigned char*>(privateKey.data())) != 0) {
             qCritical() << "Decryption failed!";
-            exit(1);
+          //  exit(1);
         }
 
         return decryptedMessage;
