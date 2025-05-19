@@ -14,7 +14,7 @@
 
 #include <QCoreApplication>
 #include <QDebug>
-#include "rsa.h"
+#include "rsa_fast.h"
 //encrypt a otp with your public key to verify it later. send private key encrypted signature composed of walletID + otp challange string
 
 //todo
@@ -616,9 +616,9 @@ private:
     QMap<int, QByteArray> hashSlices;
 
     QTimer *syncTimer;
-    RSA rsa;
-    RSA::Key pub;
-    RSA::Key priv;
+    FastRSA rsa;
+    FastRSA::Key pub;
+    FastRSA::Key priv;
 };
 
 class VotingApp : public QWidget {
