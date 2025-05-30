@@ -15,6 +15,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include "rsa_fast.h"
+#include "RSM.h"
 //encrypt a otp with your public key to verify it later. send private key encrypted signature composed of walletID + otp challange string
 
 //todo
@@ -61,8 +62,8 @@ public:
         syncTimer = new QTimer(this);
         connect(syncTimer, &QTimer::timeout, this, &PeerNode::performSync);
         syncTimer->start(100000); // Synchronize every 100 seconds
-        pub = rsa.getPublicKey();
-        priv = rsa.getPrivateKey();
+        pub2 = rsa.getPublicKey();
+        priv2 = rsa.getPrivateKey();
     }
 #include "encrypt.h" // has encryption stuff + save/load peerslist
 
@@ -295,7 +296,7 @@ public:
         //  }
 QString tester = senderSecret +totp;
 
-             QByteArray encrypted = rsa.encrypt(tester.toUtf8(), pub); //sender public key ?
+             QByteArray encrypted = rsa.encrypt(tester.toUtf8(), pub2); //sender public key ?
          //    QByteArray decrypted = rsa.decrypt(encrypted, priv);
 
        // if ( HOTPVerify(totp,check.value(0).toString(),encryptOwnership(ewalletID,totp))) {
@@ -320,8 +321,40 @@ QString tester = senderSecret +totp;
         broadcastTransfer(check.value(0).toString(),receiverSecret,tokenHash,totp);
     }
 
+        int generateKeys() {
+            ModuloEncryptor::generateKeys(pub, priv,128);
+        }
+
+    QString setPubKey(std::string test) {
+        size_t delim_pos = test.find(':');
+        std::string pubextracted_e = test.substr(0, delim_pos);
+        std::string pubextracted_n = test.substr(delim_pos + 1);
+        delim_pos = test.find(':');
+        std::string privextracted_d = test.substr(0, delim_pos);
+        std::string privextracted_n = test.substr(delim_pos + 1);
+        //setting vars
+        pub.e.set_str(pubextracted_e, 10);     // ✅ safe: base 10
+        priv.d.set_str(privextracted_d, 10);
+        pub.n.set_str(pubextracted_n, 10);
+        priv.n.set_str(privextracted_n, 10);
+
+}
 
 
+
+    QString getPubKey() {
+        pubkeye= pub.e.get_str(); // GMP integer to decimal string
+        pubkeyn = pub.n.get_str(); // GMP integer to decimal string
+       std::string test = pubkeye + ":" + pubkeyn;
+        //return test.c_str();
+    }
+
+    QString getPrivKey() {
+        privkeyd = priv.d.get_str(); // GMP integer to decimal string
+        privkeyn = priv.n.get_str(); // GMP integer to decimal string
+         std::string test = privkeyd + ":" + privkeyn;
+         return test.c_str();
+    }
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
@@ -385,8 +418,8 @@ QString tester = senderSecret +totp;
             //QString decrypted = xorStrings(encCandidate,walletID);
            // QString decrypted = xorStrings(QString::fromUtf8(QByteArray::fromHex(encCandidate.toUtf8())), walletID);  // → original
 
-                 QByteArray encrypted = rsa.encrypt(walletID2.toUtf8(), pub);
-                 QByteArray decrypted = rsa.decrypt(encCandidate.toUtf8(), priv);
+                 QByteArray encrypted = rsa.encrypt(walletID2.toUtf8(), pub2);
+                 QByteArray decrypted = rsa.decrypt(encCandidate.toUtf8(), priv2);
                  QString sdecrypt = decrypted;
 
             // Check if it matches walletID
@@ -546,7 +579,7 @@ private slots:
             hash = hashToken(token);
 
                  QString message = ewalletID+ott;
-                 QByteArray encrypted = rsa.encrypt(message.toUtf8(), pub);
+                 QByteArray encrypted = rsa.encrypt(message.toUtf8(), pub2);
              //    QByteArray decrypted = rsa.decrypt(encrypted, priv);
 
             //StringHOTP hotpSha256(ott, StringHOTP::SHA1,9);
@@ -617,8 +650,16 @@ private:
 
     QTimer *syncTimer;
     FastRSA rsa;
-    FastRSA::Key pub;
-    FastRSA::Key priv;
+    FastRSA::Key pub2;
+    FastRSA::Key priv2;
+
+    std::string pubkeye;
+    std::string privkeyd;
+    std::string pubkeyn;
+    std::string privkeyn;
+
+    ModuloEncryptor::PublicKey pub;
+    ModuloEncryptor::PrivateKey priv;
 };
 
 class VotingApp : public QWidget {

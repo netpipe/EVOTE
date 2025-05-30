@@ -142,13 +142,17 @@ private:
         return mpz_class("0x" + hex);
     }
 
-    static vector<int> getMethodOrder(const string& key) {
-        vector<int> order = {0, 1, 2,3,4};
-        seed_seq seed(key.begin(), key.end());
-        mt19937 rng(seed);
-        shuffle(order.begin(), order.end(), rng);
-        return order;
-    }
+static std::vector<int> getMethodOrder(const std::string& key, size_t limit = 4) {
+    std::vector<int> order = {0, 1, 2, 3, 4, 5};
+    std::seed_seq seed(key.begin(), key.end());
+    std::mt19937 rng(seed);
+    std::shuffle(order.begin(), order.end(), rng);
+    // Clamp the limit to avoid overflow
+    if (limit > order.size()) limit = order.size();
+    // Return only the first `limit` items
+    return std::vector<int>(order.begin(), order.begin() + limit);
+}
+
 
     // === TRANSFORMATION METHODS ===
     static void applyMethod(string& data, const string& key, int method) {
@@ -158,6 +162,7 @@ private:
             case 2: applySubstitution(data, key); break;
             case 3: customMix(data);  break;
             case 4: flipBytePairs(data);  break;
+            case 5: shuffleString(data,key);  break;
         }
     }
 
@@ -168,6 +173,7 @@ private:
             case 2: reverseSubstitution(data, key); break;
             case 3: customUnmix(data);  break;
             case 4: flipBytePairs(data);  break;
+            case 5: unshuffleString(data,key);  break;
         }
     }
 
@@ -181,6 +187,37 @@ private:
             if (isalpha(c))
                 c = (islower(c) ? 'a' : 'A') + (c - (islower(c) ? 'a' : 'A') + shift) % 26;
     }
+
+    static void shuffleString(std::string& data, const std::string& key) {
+        std::vector<size_t> indices(data.size());
+        std::iota(indices.begin(), indices.end(), 0);
+
+        std::seed_seq seed(key.begin(), key.end());
+        std::mt19937 rng(seed);
+        std::shuffle(indices.begin(), indices.end(), rng);
+
+        std::string shuffled = data;
+        for (size_t i = 0; i < data.size(); ++i) {
+            shuffled[i] = data[indices[i]];
+        }
+        data = shuffled;
+    }
+
+    static void unshuffleString(std::string& data, const std::string& key) {
+        std::vector<size_t> indices(data.size());
+        std::iota(indices.begin(), indices.end(), 0);
+
+        std::seed_seq seed(key.begin(), key.end());
+        std::mt19937 rng(seed);
+        std::shuffle(indices.begin(), indices.end(), rng);
+
+        std::string unshuffled = data;
+        for (size_t i = 0; i < data.size(); ++i) {
+            unshuffled[indices[i]] = data[i];  // ← reverse mapping
+        }
+        data = unshuffled;
+    }
+
     
     static void applySubstitution(string& data, const string& key) {
         string alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";

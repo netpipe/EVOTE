@@ -22,15 +22,16 @@ SOURCES += \
 
 HEADERS += \
     HTOP.h \
+    RSM.h \
     encrypt.h \
   totp.h \
-  rsa_fast.h\
-    qaesencryption.h \
+  rsa_fast.h \
+    qaesencryption.h
 
 
 FORMS += \
 
-LIBS += -L/Users/macbook2015/Desktop/brew/lib
+LIBS += -L/Users/macbook2015/Desktop/brew/lib -lgmpxx -lgmp
 
 INCLUDEPATH += /Users/macbook2015/Desktop/brew/include /Users/macbook2015/Desktop/brew/lib
 
