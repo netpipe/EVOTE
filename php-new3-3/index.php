@@ -23,6 +23,7 @@ const STUN_URLS   = ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.co
 const MAX_PUSH    = 250;
 const FAUCET_COINS = 3;
 
+
 /* ---------------------------------------------------------------- storage */
 
 function db(): PDO {
@@ -988,7 +989,7 @@ label.f{display:block;font-size:11px;letter-spacing:.13em;text-transform:upperca
     <div class="shead">
       <div><div class="eyebrow">Append-only history</div><h2>Ledger</h2><p>Raw signed lines, verified with Ed25519 in this tab. Import a ledger file to merge another replica's history.</p></div>
       <div class="acts">
-        <button class="btn" data-act="import-ledger">Import ledger</button>
+        <button class="btn" data-act="import-ledger">Import voucher</button>
         <button class="btn" data-act="export-ledger">Export ledger</button>
         <button class="btn ghost" data-act="export-ledger-txt">Raw .txt</button>
       </div>
@@ -1063,7 +1064,7 @@ label.f{display:block;font-size:11px;letter-spacing:.13em;text-transform:upperca
           </div>
           <div class="field"><label class="f">Data</label>
             <div class="row"><button class="btn sm" data-act="export-all">Export everything</button>
-              <button class="btn sm" data-act="import-ledger">Import ledger</button>
+              <button class="btn sm" data-act="import-ledger">Import voucher</button>
               <button class="btn sm danger" data-act="clear-ledger">Clear local replica</button></div></div>
         </div></div>
     </div>
@@ -1395,7 +1396,7 @@ const S = {
   lines: [], byHash: new Map(), verified: new Set(), bad: new Set(),
   st: { tokens: new Map(), votes: new Map(), conflicts: [] },
   lastId: 0, lastSync: 0, syncing: false,
-  prefs: { theme: 'midnight', density: 'comfortable', motion: true, sound: true, syncSec: 6, autoSync: true, verify: true,
+  prefs: { theme: 'midnight', density: 'comfortable', motion: false, sound: true, syncSec: 6, autoSync: true, verify: true,
            viz: { speed: 1, glow: 1, particles: 1, orbit: 1, trails: .5, scale: 1, grid: true } },
   ui: { section: 'overview', coinFilter: 'unspent', coinSort: 'newest', coinQuery: '', sel: new Set(), views: [],
         lfilter: 'all', lquery: '', llimit: 120, adminToken: '', admin: null, voteChoice: null, voteCoin: '', voteCoins: new Set() },
@@ -1590,7 +1591,7 @@ const Viz = {
     this.raf = requestAnimationFrame(t => this.loop(t));
     const dt = Math.min(.05, (ts - this.last) / 1000); this.last = ts;
     if (document.hidden) return;
-    this.frames++; if (ts - this.fpsT > 500) { this.fps = Math.round(this.frames * 1000 / (ts - this.fpsT)); this.frames = 0; this.fpsT = ts; const f = $('hudFps'); if (f) f.textContent = this.fps; }
+    this.frames++; if (ts - this.fpsT > 500) { this.fps = Math.round(this.frames * 100 / (ts - this.fpsT)); this.frames = 0; this.fpsT = ts; const f = $('hudFps'); if (f) f.textContent = this.fps; }
     if (S.prefs.motion) this.t += dt * S.prefs.viz.speed;
     this.draw(dt);
   },
