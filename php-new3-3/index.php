@@ -1398,7 +1398,7 @@ const S = {
   prefs: { theme: 'midnight', density: 'comfortable', motion: true, sound: true, syncSec: 6, autoSync: true, verify: true,
            viz: { speed: 1, glow: 1, particles: 1, orbit: 1, trails: .5, scale: 1, grid: true } },
   ui: { section: 'overview', coinFilter: 'unspent', coinSort: 'newest', coinQuery: '', sel: new Set(), views: [],
-        lfilter: 'all', lquery: '', llimit: 120, adminToken: '', admin: null, voteChoice: null, voteCoin: '' },
+        lfilter: 'all', lquery: '', llimit: 120, adminToken: '', admin: null, voteChoice: null, voteCoin: '', voteCoins: new Set() },
   mesh: { room: '', joined: false, since: 0, peers: new Map(), pcs: new Map(), chans: new Map(), authed: new Map(), making: new Map(), ignore: new Map(), buf: new Map(), myId: hex(rand(4)), ice: [], polling: false, rx: 0, tx: 0 },
   activity: [], selftest: null, undo: null, fileMode: null
 };
