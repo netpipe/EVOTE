@@ -14,7 +14,7 @@ declare(strict_types=1);
  * Requires PHP >= 8.0 with sodium + pdo_sqlite (both stock). No composer, no CDN.
  */
 
-const DATA_DIR    = __DIR__ . '/evote-data';
+const DATA_DIR    = __DIR__ . '/evote-data';   // best: point this OUTSIDE the web root, e.g. '/var/lib/evote'
 const DB_FILE     = DATA_DIR . '/evote.sqlite';
 const INSTALL_KEY = '';                       // optional: gate the first-run installer
 const TURN_SECRET = '';                       // coturn static-auth-secret ('' = STUN only)
@@ -22,6 +22,10 @@ const TURN_URLS   = [];                       // ['turn:turn.example.org:3478?tr
 const STUN_URLS   = ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'];
 const MAX_PUSH    = 250;
 const FAUCET_COINS = 3;
+const FAUCET_ON_INSTALL = false;              // faucet starts OFF; the admin can switch it on
+const FAUCET_PER_IP_DAY = 1;                  // claims allowed per IP address per 24h
+const FAUCET_DAY_CAP    = 200;                // claims allowed in total per 24h
+const MAX_EXPIRY_SEC    = 30 * 86400;         // a transfer/voucher can live at most 30 days
 
 
 /* ---------------------------------------------------------------- storage */
@@ -30,6 +34,7 @@ function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
     if (!is_dir(DATA_DIR)) @mkdir(DATA_DIR, 0700, true);
+    lock_data_dir();
     $pdo = new PDO('sqlite:' . DB_FILE);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec('PRAGMA journal_mode=WAL');
@@ -53,6 +58,8 @@ CREATE TABLE IF NOT EXISTS conflicts (
   a_line TEXT NOT NULL, b_line TEXT NOT NULL, ts INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS orphans (id INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT UNIQUE NOT NULL, ts INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS claims (pub TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS claim_ips (ip TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_claim_ips ON claim_ips(ip,ts);
 CREATE TABLE IF NOT EXISTS signals (
   id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, sender TEXT NOT NULL,
   target TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, payload TEXT NOT NULL, ts INTEGER NOT NULL);
@@ -60,6 +67,35 @@ CREATE INDEX IF NOT EXISTS idx_sig ON signals(room,id);
 CREATE INDEX IF NOT EXISTS idx_lines_token ON lines(token_hash);
 SQL);
     return $pdo;
+}
+/* Deny web access to the data folder (Apache 2.2/2.4 + IIS). nginx ignores these files:
+   add  location ~ /evote-data/ { deny all; }  to the server block. */
+function lock_data_dir(): void {
+    $files = [DATA_DIR . '/.htaccess'  => "Require all denied\nDeny from all\n",
+              DATA_DIR . '/web.config' => "<?xml version=\"1.0\"?><configuration><system.webServer><authorization><deny users=\"*\" /></authorization></system.webServer></configuration>\n",
+              DATA_DIR . '/index.html' => ''];
+    foreach ($files as $f => $c) if (!is_file($f)) @file_put_contents($f, $c);
+}
+/* The issuer seed lives in a PHP file that prints nothing if it is ever requested over HTTP,
+   never in the SQLite file. Older installs kept a plain copy in meta.seed_plain_demo: it is
+   moved here on first use and deleted from the database. */
+const KEY_FILE = DATA_DIR . '/issuer-key.php';
+function issuer_seed_get(): ?string {
+    if (is_file(KEY_FILE) && preg_match('/SEED=([A-Za-z0-9+\/=]+)/', (string)file_get_contents(KEY_FILE), $m)) {
+        $seed = base64_decode($m[1], true);
+        if ($seed !== false && strlen($seed) === 32) return $seed;
+    }
+    $old = meta_get('seed_plain_demo');
+    if ($old !== null) {
+        $seed = base64_decode($old, true);
+        if ($seed !== false && strlen($seed) === 32 && issuer_seed_put($seed)) { db()->exec("DELETE FROM meta WHERE k='seed_plain_demo'"); return $seed; }
+    }
+    return null;
+}
+function issuer_seed_put(string $seed): bool {
+    $ok = @file_put_contents(KEY_FILE, "<?php http_response_code(404); exit; ?>\nSEED=" . base64_encode($seed) . "\n", LOCK_EX) !== false;
+    if ($ok) @chmod(KEY_FILE, 0600);
+    return $ok;
 }
 function meta_get(string $k): ?string {
     $q = db()->prepare('SELECT v FROM meta WHERE k=?'); $q->execute([$k]);
@@ -142,6 +178,16 @@ function spend_line(string $tok): ?string {
 }
 
 function ingest_one(string $line): array {
+    $db = db();
+    $own = !$db->inTransaction();
+    if ($own) $db->beginTransaction();
+    try {
+        $r = ingest_one_tx($line);
+        if ($own) { if ($r['ok']) $db->commit(); else $db->rollBack(); }
+        return $r;
+    } catch (Throwable $e) { if ($own && $db->inTransaction()) $db->rollBack(); throw $e; }
+}
+function ingest_one_tx(string $line): array {
     $v = parse_line($line);
     if (!$v) return ['ok' => false, 'err' => 'bad signature'];
     $db = db();
@@ -156,6 +202,7 @@ function ingest_one(string $line): array {
     if ($v['type'] === 'SIGNED_ISSUE') {
         if (count($p) !== 8) return ['ok' => false, 'err' => 'issue fields'];
         if (!is_issuer($v['pub'])) return ['ok' => false, 'err' => 'not an issuer'];
+        if (!ctype_digit($p[7])) return ['ok' => false, 'err' => 'issue values'];
         [$tok, $owner, $amt] = [$p[5], $p[6], (int)$p[7]];
         if (!preg_match('/^[0-9a-f]{64}$/', $tok) || raw_from_pub_id($owner) === null || $amt < 1 || $amt > 1000000)
             return ['ok' => false, 'err' => 'issue values'];
@@ -165,6 +212,9 @@ function ingest_one(string $line): array {
         if (count($p) !== 7) return ['ok' => false, 'err' => 'vote fields'];
         $cand = base64_decode($p[5], true); $tok = $p[6];
         if ($cand === false || trim($cand) === '' || strlen($cand) > 200) return ['ok' => false, 'err' => 'candidate'];
+        $b = ballot();
+        if ($b['closed']) return ['ok' => false, 'err' => 'ballot closed'];
+        if (!in_array($cand, $b['options'], true)) return ['ok' => false, 'err' => 'not a ballot option'];
         $t = token_row($tok);
         if (!$t) return ['ok' => false, 'err' => 'orphan', 'orphan' => true];
         if ($t['owner_pub'] !== $v['pub']) return ['ok' => false, 'err' => 'not owner'];
@@ -176,9 +226,11 @@ function ingest_one(string $line): array {
            ->execute([$tok, $cand, $v['pub'], $v['ts']]);
     } elseif ($v['type'] === 'SIGNED_TRANSFER') {
         if (count($p) !== 9) return ['ok' => false, 'err' => 'transfer fields'];
+        if (!ctype_digit($p[7]) || !ctype_digit($p[8])) return ['ok' => false, 'err' => 'transfer values'];
         [$tok, $rcv, $amt, $exp] = [$p[5], $p[6], (int)$p[7], (int)$p[8]];
         if (raw_from_pub_id($rcv) === null || $amt < 1) return ['ok' => false, 'err' => 'transfer values'];
-        if (time() - $v['ts'] < 3600 && time() > $exp) return ['ok' => false, 'err' => 'expired'];
+        if ($exp < $v['ts'] || $exp - $v['ts'] > MAX_EXPIRY_SEC) return ['ok' => false, 'err' => 'bad expiry'];
+        if (time() > $exp) return ['ok' => false, 'err' => 'expired'];
         $t = token_row($tok);
         if (!$t) return ['ok' => false, 'err' => 'orphan', 'orphan' => true];
         if ($t['owner_pub'] !== $v['pub']) return ['ok' => false, 'err' => 'not owner'];
@@ -205,7 +257,7 @@ function push_lines(array $lines): array {
             try { $db->prepare('INSERT OR IGNORE INTO orphans(line,ts) VALUES(?,?)')->execute([$l, time()]); } catch (Throwable $e) {}
             continue;
         }
-        if (empty($r['dup'])) $rejected[] = ['err' => $r['err'], 'line' => substr($l, 0, 80)];
+        if (empty($r['dup'])) $rejected[] = ['err' => $r['err'], 'line' => substr($l, 0, 80), 'hash' => hash('sha256', trim($l))];
     }
     for ($pass = 0; $pass < 4; $pass++) {
         $rows = $db->query('SELECT id,line FROM orphans ORDER BY id LIMIT 400')->fetchAll(PDO::FETCH_ASSOC);
@@ -220,6 +272,52 @@ function push_lines(array $lines): array {
     }
     $db->exec('DELETE FROM orphans WHERE ts < ' . (time() - 86400));
     return ['accepted' => $accepted, 'rejected' => $rejected];
+}
+/* Redeem a voucher / raw tx lines: push them, then report each spend and the weight
+   that actually landed per recipient. Only spends accepted by THIS call count as
+   "deposited", so redeeming the same voucher twice never credits twice. */
+function redeem_lines(array $lines, int $spends = 0): array {
+    $lines = array_values(array_filter(array_map(fn($l) => trim((string)$l), $lines), fn($l) => $l !== ''));
+    $tail = $spends > 0 ? array_slice($lines, -$spends) : $lines;
+    $before = [];
+    $q = db()->prepare('SELECT 1 FROM lines WHERE hash=?');
+    foreach ($tail as $l) { $q->execute([hash('sha256', $l)]); $before[hash('sha256', $l)] = (bool)$q->fetchColumn(); }
+    $r = push_lines($lines);
+    $acc = array_flip($r['accepted']);
+    $rej = [];
+    foreach ($r['rejected'] as $x) if (isset($x['hash'])) $rej[$x['hash']] = $x['err'];
+    $items = []; $deposited = [];
+    foreach ($tail as $l) {
+        $v = parse_line($l);
+        if (!$v) { $items[] = ['status' => 'rejected', 'err' => 'bad signature', 'line' => substr($l, 0, 80)]; continue; }
+        if ($v['type'] !== 'SIGNED_TRANSFER' && $v['type'] !== 'SIGNED_VOTE') continue;
+        $tok = $v['type'] === 'SIGNED_TRANSFER' ? $v['p'][5] : $v['p'][6];
+        $it = ['hash' => $v['hash'], 'type' => $v['type'] === 'SIGNED_TRANSFER' ? 'transfer' : 'vote', 'coin' => $tok, 'from' => $v['pub']];
+        if ($v['type'] === 'SIGNED_TRANSFER') { $it['to'] = $v['p'][6]; $it['amount'] = (int)$v['p'][7]; $it['expires'] = (int)$v['p'][8]; }
+        if (isset($acc[$v['hash']])) {
+            $t = token_row($tok);
+            $it['status'] = 'deposited';
+            if ($it['type'] === 'transfer') {
+                if ($t && $t['owner_pub'] === $it['to'] && (int)$t['spent'] === 0) $deposited[$it['to']] = ($deposited[$it['to']] ?? 0) + (int)$t['amount'];
+                else $it['status'] = 'moved';   // accepted, but the coin was passed on again in the same batch
+            } else $it['status'] = 'voted';
+        } elseif (!empty($before[$v['hash']])) $it['status'] = 'already_redeemed';
+        elseif (isset($rej[$v['hash']])) { $it['status'] = 'rejected'; $it['err'] = $rej[$v['hash']]; }
+        else {
+            $q->execute([$v['hash']]);
+            if ($q->fetchColumn()) $it['status'] = 'already_redeemed';
+            else { $it['status'] = 'pending'; $it['err'] = 'coin history missing on this server - include the provenance lines'; }
+        }
+        $items[] = $it;
+    }
+    return ['deposited' => $deposited, 'weight' => array_sum($deposited), 'items' => $items,
+            'accepted' => count($r['accepted']), 'rejected' => $r['rejected']];
+}
+function balance_of(string $pub): array {
+    $q = db()->prepare('SELECT token_hash,amount,issuer,updated FROM tokens WHERE owner_pub=? AND spent=0 ORDER BY updated DESC');
+    $q->execute([$pub]); $coins = [];
+    foreach ($q as $r) $coins[] = ['hash' => $r['token_hash'], 'amount' => (int)$r['amount'], 'issuer' => $r['issuer'], 'updated' => (int)$r['updated']];
+    return ['address' => $pub, 'coins' => $coins, 'count' => count($coins), 'weight' => array_sum(array_column($coins, 'amount'))];
 }
 function pull_lines(int $since, int $limit = 400): array {
     $q = db()->prepare('SELECT id,line FROM lines WHERE id>? ORDER BY id ASC LIMIT ?');
@@ -279,8 +377,8 @@ function seed_demo(int $voters = 6, int $coinsEach = 5): int {
     return count($issueLines) + count($acts);
 }
 function server_sk_raw(): string {
-    $seed = base64_decode((string)meta_get('seed_plain_demo'));
-    if ($seed !== false && strlen($seed) === 32) return sodium_crypto_sign_secretkey(sodium_crypto_sign_seed_keypair($seed));
+    $seed = issuer_seed_get();
+    if ($seed !== null) return sodium_crypto_sign_secretkey(sodium_crypto_sign_seed_keypair($seed));
     throw new RuntimeException('issuer key unavailable');
 }
 
@@ -304,8 +402,13 @@ function same_origin(): bool {
 }
 function admin_token(): string { return (string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''); }
 function admin_ok(): bool {
-    $h = meta_get('admin_hash'); if (!$h) return false;
-    return hash_equals($h, hash('sha256', admin_token()));
+    $h = meta_get('admin_hash'); $t = admin_token(); if (!$h || $t === '') return false;
+    if (preg_match('/^[0-9a-f]{64}$/', $h)) {             // pre-fix install: plain sha256, upgrade on success
+        if (!hash_equals($h, hash('sha256', $t))) return false;
+        meta_set('admin_hash', sodium_crypto_pwhash_str($t, SODIUM_CRYPTO_PWHASH_OPSLIMIT_INTERACTIVE, SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE));
+        return true;
+    }
+    return sodium_crypto_pwhash_str_verify($h, $t);
 }
 
 /* ---------------------------------------------------------------- CLI */
@@ -315,7 +418,7 @@ if (PHP_SAPI === 'cli') {
     try {
         if ($cmd === 'id') { echo server_pub() ?: "(not installed)\n"; }
         elseif ($cmd === 'export') { $s = 0; for (;;) { $r = pull_lines($s, 500); foreach ($r['lines'] as $l) echo $l['line'], "\n"; $s = $r['last']; if (count($r['lines']) < 500) break; } }
-        elseif ($cmd === 'reset-admin') { db()->exec("DELETE FROM meta WHERE k IN ('admin_hash','seed_salt','seed_nonce','seed_ct','seed_plain_demo')"); echo "admin cleared — reopen the page to install again\n"; }
+        elseif ($cmd === 'reset-admin') { db()->exec("DELETE FROM meta WHERE k IN ('admin_hash','seed_salt','seed_nonce','seed_ct','seed_plain_demo')"); @unlink(KEY_FILE); echo "admin cleared — reopen the page to install again\n"; }
         else echo "EVOTE v2\n  php evote.php id\n  php evote.php export > ledger.txt\n  php evote.php reset-admin\n";
     } catch (Throwable $e) { fwrite(STDERR, 'error: ' . $e->getMessage() . "\n"); exit(1); }
     exit(0);
@@ -360,10 +463,10 @@ if ($action === '') {                       // serve the app
             $n = random_bytes(SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
             meta_set('seed_ct', base64_encode(sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($seed, '', $n, $k)));
             meta_set('seed_salt', base64_encode($salt)); meta_set('seed_nonce', base64_encode($n));
-            meta_set('seed_plain_demo', base64_encode($seed));   // demo mint convenience; see README note in Vault
-            meta_set('admin_hash', hash('sha256',  $tok));
+            if (!issuer_seed_put($seed)) out(['ok' => false, 'err' => 'cannot write ' . KEY_FILE . ' - check folder permissions'], 500);
+            meta_set('admin_hash', sodium_crypto_pwhash_str($tok, SODIUM_CRYPTO_PWHASH_OPSLIMIT_INTERACTIVE, SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE));
             meta_set('server_pub', $pub);
-            meta_set('faucet', '1');
+            meta_set('faucet', FAUCET_ON_INSTALL ? '1' : '0');
             $q = trim((string)($in['question'] ?? '')); $opts = (array)($in['options'] ?? []);
             $opts = array_values(array_filter(array_map(fn($o) => trim((string)$o), $opts), fn($o) => $o !== ''));
             meta_set('ballot', json_encode(['question' => $q !== '' ? $q : ballot()['question'],
@@ -383,13 +486,44 @@ if ($action === '') {                       // serve the app
             out(['ok' => true] + $r + ['last' => (int)db()->query('SELECT COALESCE(MAX(id),0) FROM lines')->fetchColumn()]);
         }
 
+        case 'redeem': {            // API: voucher file / raw tx lines -> deposited weight per address
+            $v = $in['voucher'] ?? null;
+            if (is_string($v)) $v = json_decode($v, true);
+            $spends = 0;
+            if (is_array($v)) {
+                if (($v['format'] ?? '') !== 'evote-voucher') out(['ok' => false, 'err' => 'not an evote-voucher'], 400);
+                $lines = (array)($v['lines'] ?? []); $spends = max(0, (int)($v['spends'] ?? 0));
+            } elseif (isset($in['lines'])) $lines = (array)$in['lines'];
+            elseif (isset($in['raw'])) $lines = preg_split('/\r?\n/', (string)$in['raw']);
+            else out(['ok' => false, 'err' => 'send voucher, lines or raw'], 400);
+            if (count($lines) > MAX_PUSH) out(['ok' => false, 'err' => 'too many lines'], 413);
+            $r = redeem_lines($lines, $spends);
+            $to = trim((string)($in['to'] ?? ''));
+            if ($to !== '') $r['to'] = ['address' => $to, 'weight' => (int)($r['deposited'][$to] ?? 0)];
+            out(['ok' => true] + $r);
+        }
+
+        case 'balance': {           // API: unspent coins + weight held by an address
+            $pub = trim((string)($in['pub'] ?? ''));
+            if (raw_from_pub_id($pub) === null) out(['ok' => false, 'err' => 'invalid address'], 400);
+            out(['ok' => true] + balance_of($pub));
+        }
+
         case 'claim': {
             if (meta_get('faucet') === '0') out(['ok' => false, 'err' => 'faucet disabled by admin'], 403);
             $pub = trim((string)($in['pub'] ?? ''));
             if (raw_from_pub_id($pub) === null) out(['ok' => false, 'err' => 'invalid address'], 400);
             $q = db()->prepare('SELECT 1 FROM claims WHERE pub=?'); $q->execute([$pub]);
             if ($q->fetchColumn()) out(['ok' => false, 'err' => 'this address already claimed its allowance'], 409);
+            $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+            $day = time() - 86400;
+            $q = db()->prepare('SELECT COUNT(*) FROM claim_ips WHERE ip=? AND ts>?'); $q->execute([$ip, $day]);
+            if ((int)$q->fetchColumn() >= FAUCET_PER_IP_DAY) out(['ok' => false, 'err' => 'faucet limit reached for your connection - try again tomorrow'], 429);
+            $q = db()->prepare('SELECT COUNT(*) FROM claim_ips WHERE ts>?'); $q->execute([$day]);
+            if ((int)$q->fetchColumn() >= FAUCET_DAY_CAP) out(['ok' => false, 'err' => 'faucet is empty for today'], 429);
+            db()->prepare('DELETE FROM claim_ips WHERE ts<?')->execute([$day]);
             db()->prepare('INSERT INTO claims(pub,ts) VALUES(?,?)')->execute([$pub, time()]);
+            db()->prepare('INSERT INTO claim_ips(ip,ts) VALUES(?,?)')->execute([$ip, time()]);
             $lines = mint(server_sk_raw(), $pub, FAUCET_COINS, 1);
             $r = push_lines($lines);
             out(['ok' => true, 'lines' => $lines, 'accepted' => $r['accepted']]);
@@ -401,7 +535,7 @@ if ($action === '') {                       // serve the app
             $raw = raw_from_pub_id($pub); $sb = base64_decode($sig, true);
             if ($raw !== null && $sb !== false && strlen($sb) === SODIUM_CRYPTO_SIGN_BYTES && strlen($msg) < 4096)
                 $valid = sodium_crypto_sign_verify_detached($sb, $msg, $raw);
-            $smsg = $msg . ':server';
+            $smsg = 'EVOTE-SELFTEST|' . hash('sha256', $msg) . ':server';   // domain-separated: can never parse as a ledger line
             out(['ok' => true, 'valid' => $valid, 'serverPub' => server_pub(),
                  'serverMsg' => $smsg, 'serverSig' => base64_encode(sodium_crypto_sign_detached($smsg, server_sk_raw()))]);
         }
@@ -1417,11 +1551,11 @@ function replay() {
     const p = l.p;
     if (l.type === 'SIGNED_ISSUE' && p.length === 8) {
       if (!iss.has(l.pub)) continue;
-      const tok = p[5], owner = p[6], amt = parseInt(p[7], 10);
+      const tok = p[5], owner = p[6], amt = /^\d+$/.test(p[7]) ? parseInt(p[7], 10) : NaN;
       if (!/^[0-9a-f]{64}$/.test(tok) || !(amt > 0)) continue;
       if (!tokens.has(tok)) tokens.set(tok, { hash: tok, owner, amount: amt, spent: false, issuer: l.pub, ts: l.ts, updated: l.ts, history: [l.hash], received: false });
     } else if (l.type === 'SIGNED_TRANSFER' && p.length === 9) {
-      const tok = p[5], rcv = p[6], amt = parseInt(p[7], 10), t = tokens.get(tok);
+      const tok = p[5], rcv = p[6], amt = /^\d+$/.test(p[7]) ? parseInt(p[7], 10) : NaN, t = tokens.get(tok);
       if (!t) continue;
       if (t.owner !== l.pub) continue;
       if (t.spent) { conflicts.push({ token: tok, kind: 'transfer after spend', a: spendOf.get(tok), b: l.hash }); continue; }
@@ -2820,6 +2954,10 @@ function transferModal(hash) {
       <input id="btTo" placeholder="base64 PEM public key id" autocomplete="off" spellcheck="false">
       <div class="addrbook">${known.map(p => `<button data-act="bt-pick" data-pub="${esc(p)}">${esc(nameOf(p))}</button>`).join('')}</div>
       <div class="tiny faint" id="btToHint" style="margin-top:6px">Paste an address or pick a known holder.</div></div>
+    <div class="row" style="align-items:flex-end;margin-bottom:6px">
+      <div style="flex:1;min-width:150px"><label class="f">Send weight</label><input id="btWeight" type="number" min="1" step="1" placeholder="e.g. 7 - picks the coins for you"></div>
+      <button class="btn sm" data-act="bt-weight" style="margin-bottom:2px">Pick coins</button></div>
+    <div class="tiny faint" id="btWeightHint" style="margin-bottom:10px"></div>
     <div class="row" style="align-items:flex-end">
       <div style="flex:1;min-width:150px"><label class="f">Offer expires in (hours)</label><input id="btHours" type="number" min="1" max="720" value="24"></div>
       <div class="row" style="gap:6px;padding-bottom:2px">
@@ -2838,6 +2976,49 @@ function transferModal(hash) {
     <div class="tiny faint" style="margin-top:10px">Each coin signs its own line, so a partial rejection never moves the others. Accepted transfers are permanent.</div>`);
   bulkRender();
   setTimeout(() => { const i = $('btTo'); if (i) i.focus(); }, 70);
+}
+
+/* Pick unspent coins that add up to exactly `target` weight. Coins can't be split, so when no
+   exact set exists it returns the nearest totals below and above instead. Bounded subset-sum
+   per distinct coin amount; falls back to largest-first greedy for huge inputs. */
+function weightPlan(coins, target) {
+  const total = coins.reduce((a, c) => a + c.amount, 0);
+  if (!(target >= 1) || !coins.length) return { exact: null, below: null, above: null, total };
+  const groups = new Map();
+  [...coins].sort((a, b) => a.updated - b.updated).forEach(c => { if (!groups.has(c.amount)) groups.set(c.amount, []); groups.get(c.amount).push(c); });
+  const amts = [...groups.keys()].sort((a, b) => b - a);
+  const lim = Math.min(total, target + amts[0]);
+  const build = s => { const out = []; for (let k = amts.length - 1; k >= 0; k--) { const n = layers[k][s]; out.push(...groups.get(amts[k]).slice(0, n)); s -= n * amts[k]; } return out; };
+  let layers = [];
+  if (amts.length * (lim + 1) > 3e6) {                 // greedy fallback
+    const pick = []; let sum = 0;
+    for (const c of [...coins].sort((a, b) => b.amount - a.amount)) if (sum + c.amount <= target) { pick.push(c); sum += c.amount; }
+    return sum === target ? { exact: pick, below: null, above: null, total } : { exact: null, below: sum ? { weight: sum, coins: pick } : null, above: null, total };
+  }
+  let reach = new Uint8Array(lim + 1); reach[0] = 1;
+  for (const a of amts) {
+    const cnt = groups.get(a).length, nr = reach.slice(), u = new Uint32Array(lim + 1);
+    for (let s = a; s <= lim; s++) if (!reach[s] && nr[s - a] && u[s - a] < cnt) { nr[s] = 1; u[s] = u[s - a] + 1; }
+    layers.push(u); reach = nr;
+  }
+  if (target <= lim && reach[target]) return { exact: build(target), below: null, above: null, total };
+  let lo = Math.min(target, lim); while (lo > 0 && !reach[lo]) lo--;
+  let hi = target + 1; while (hi <= lim && !reach[hi]) hi++;
+  return { exact: null, total,
+           below: lo > 0 ? { weight: lo, coins: build(lo) } : null,
+           above: hi <= lim ? { weight: hi, coins: build(hi) } : null };
+}
+function bulkPickWeight(w) {
+  const hint = $('btWeightHint'); if (!hint) return;
+  const target = w != null ? w : parseInt(($('btWeight') || {}).value, 10);
+  if (!(target >= 1)) { hint.textContent = 'Enter a whole number of weight to send.'; return; }
+  const plan = weightPlan(myCoins('unspent'), target);
+  const use = list => { BULK.hashes = new Set(list.map(c => c.hash)); bulkRender(); };
+  if (plan.exact) { use(plan.exact); $('btWeight').value = target; hint.textContent = `Picked ${plan.exact.length} coin(s) = exactly ${target} weight.`; return; }
+  BULK.hashes.clear(); bulkRender();                  // never leave an old pick selected when there is no exact match
+  if (target > plan.total) { hint.textContent = `You only hold ${plan.total} unspent weight.`; return; }
+  const opt = o => o ? `<button class="btn sm ghost" data-act="bt-weight-alt" data-w="${o.weight}">Use ${o.weight} (${o.coins.length} coin${o.coins.length === 1 ? '' : 's'})</button>` : '';
+  hint.innerHTML = `No exact set of coins adds up to ${target} (coins can't be split). Closest: ${opt(plan.below)} ${opt(plan.above)}`;
 }
 
 function bulkRender() {
@@ -2985,6 +3166,8 @@ document.addEventListener('click', e => {
   else if (act === 'bt-pick') { $('btTo').value = t.dataset.pub; bulkRender(); }
   else if (act === 'bt-send') bulkSend();
   else if (act === 'bt-voucher') bulkVoucher();
+  else if (act === 'bt-weight') bulkPickWeight();
+  else if (act === 'bt-weight-alt') bulkPickWeight(parseInt(t.dataset.w, 10));
 }, true);
 
 document.addEventListener('input', e => {
@@ -2992,6 +3175,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target && e.target.id === 'btTo') { e.preventDefault(); bulkSend(); }
+  if (e.key === 'Enter' && e.target && e.target.id === 'btWeight') { e.preventDefault(); bulkPickWeight(); }
 });
 syncBulkUI();
 /* ============ end bulk send ============ */
