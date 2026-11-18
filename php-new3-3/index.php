@@ -1638,6 +1638,7 @@ const LS = {
 };
 function saveLocal() {
   LS.set('lines', S.lines.map(l => l.line).slice(-4000));
+  LS.set('linesTrunc', S.lines.length > 4000);       // cache holds only the newest 4000 lines
   LS.set('verified', [...S.verified].slice(-6000));
   LS.set('lastId', S.lastId);
 }
@@ -2283,7 +2284,7 @@ async function syncNow(quiet) {
       if (!r.lines || !r.lines.length) break;
       const res = await addLines(r.lines.map(x => x.line));
       added += res.added; S.lastId = r.last; guard++;
-      if (r.lines.length < 400 || guard > 20) break;
+      if (r.lines.length < 400 || guard > 250) break;
     }
     S.lastSync = nowSec(); saveLocal();
     if (added) { render(); if (!quiet) Sound.play('tick'); }
@@ -2744,7 +2745,9 @@ async function init() {
   S.walletFile = LS.get('wallet', null);
   const cached = LS.get('lines', []); S.verified = new Set(LS.get('verified', []));
   if (cached.length) { for (const raw of cached) { const v = parseLine(raw); if (v) { S.byHash.set(v.hash, v); S.lines.push(v); } } }
-  S.lastId = LS.get('lastId', 0);
+  // A truncated cache is missing the oldest lines (issues of older coins), so pulling only from
+  // lastId would leave those coins invisible after a reload. Re-pull the full ledger instead.
+  S.lastId = LS.get('linesTrunc', false) ? 0 : LS.get('lastId', 0);
   Viz.init();
   const info = await boot(true);
   replay(); render();
