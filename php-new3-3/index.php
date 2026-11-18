@@ -1359,7 +1359,17 @@ async function pbkdf2(pass, salt, iter, dkLen, onProgress) {
   }
   return out.slice(0, dkLen);
 }
-function streamXor(key, nonce, data) {
+// v3 keystream: one full 32-byte HMAC block per 32 bytes of data. (The v2 stream below stepped
+// 64 bytes per 32-byte block, so bytes 32-63 of every block were never encrypted.)
+function streamXor3(key, nonce, data) {
+  const out = u8(data.length);
+  for (let i = 0; i < data.length; i += 32) {
+    const ks = hmac256(key, concat(enc('ks3'), nonce, be32(i / 32)));
+    for (let j = 0; j < 32 && i + j < data.length; j++) out[i + j] = data[i + j] ^ ks[j];
+  }
+  return out;
+}
+function streamXor(key, nonce, data) {      // legacy v2 - decrypt only
   const out = u8(data.length);
   for (let i = 0; i < data.length; i += 64) {
     const ks = hmac256(key, concat(nonce, be32(i / 64)));
@@ -1487,9 +1497,9 @@ async function walletEncrypt(key, pass, label, onProgress) {
   const dk = await pbkdf2(enc(pass), salt, WALLET_ITER, 64, onProgress);
   const kE = dk.slice(0, 32), kM = dk.slice(32);
   const plain = enc(JSON.stringify({ seed: hex(key.seed), pub: key.id, label, created: nowSec() }));
-  const ct = streamXor(kE, nonce, plain);
-  const tag = hmac256(kM, concat(enc('evote-wallet-v2'), salt, nonce, ct));
-  return { format: 'evote-wallet', version: 2, pub: key.id, label, created: nowSec(),
+  const ct = streamXor3(kE, nonce, plain);
+  const tag = hmac256(kM, concat(enc('evote-wallet-v3'), salt, nonce, ct));
+  return { format: 'evote-wallet', version: 3, pub: key.id, label, created: nowSec(),
            kdf: { alg: 'pbkdf2-hmac-sha256', salt: b64(salt), iter: WALLET_ITER }, nonce: b64(nonce), ct: b64(ct), tag: b64(tag) };
 }
 async function walletDecrypt(file, pass, onProgress) {
@@ -1497,10 +1507,11 @@ async function walletDecrypt(file, pass, onProgress) {
   const salt = unb64(file.kdf.salt), nonce = unb64(file.nonce), ct = unb64(file.ct), tag = unb64(file.tag);
   const dk = await pbkdf2(enc(pass), salt, file.kdf.iter || WALLET_ITER, 64, onProgress);
   const kE = dk.slice(0, 32), kM = dk.slice(32);
-  const want = hmac256(kM, concat(enc('evote-wallet-v2'), salt, nonce, ct));
+  const v3 = file.version === 3;
+  const want = hmac256(kM, concat(enc(v3 ? 'evote-wallet-v3' : 'evote-wallet-v2'), salt, nonce, ct));
   let diff = 0; for (let i = 0; i < 32; i++) diff |= want[i] ^ tag[i];
   if (diff !== 0) throw new Error('wrong passphrase (authentication tag mismatch)');
-  const data = JSON.parse(dec(streamXor(kE, nonce, ct)));
+  const data = JSON.parse(dec(v3 ? streamXor3(kE, nonce, ct) : streamXor(kE, nonce, ct)));
   const key = ED.keyFromSeed(unhex(data.seed));
   if (key.id !== file.pub) throw new Error('wallet public key mismatch');
   return { key, label: data.label || file.label || '', created: data.created || file.created || nowSec() };
@@ -2423,6 +2434,11 @@ async function walletUnlock(pass) {
     const r = await walletDecrypt(S.walletFile, pass, f => setProgress(f));
     S.key = r.key; S.label = r.label || 'my wallet'; S.created = r.created; S.pass = pass;
     sessionStorage.setItem('evote.pass', pass);
+    if (S.walletFile.version !== 3) {               // re-save old v2 files in the fixed v3 format
+      const up = await walletEncrypt(r.key, pass, S.label, f => setProgress(f));
+      up.created = r.created; S.walletFile = up; LS.set('wallet', up);
+      toast('Wallet file upgraded', 'warn', 'Re-saved with the fixed encryption (v3). Export it again and delete old copies.', 'Export now', () => download('evote-wallet.json', JSON.stringify(up, null, 2)));
+    }
     setProgress(0); closeAll(); Sound.play('unlock'); render(); Viz.build();
     toast('Wallet unlocked', 'ok', nameOf(S.key.id));
   } catch (e) { setProgress(0); toast('Unlock failed', 'bad', String(e.message || e)); }
@@ -2755,6 +2771,7 @@ async function init() {
   if (S.walletFile && saved) { try { await walletUnlock(saved); } catch (e) {} }
   await runSelftest();
   if (!info.installed) installModal(); else if (!S.key) onboarding();
+  hashLink();
   setInterval(() => { if (S.prefs.autoSync && S.boot && S.boot.installed) syncNow(true); }, Math.max(2, S.prefs.syncSec) * 1000);
   setInterval(() => Mesh.poll(), 1300);
   setInterval(() => { if (S.mesh.joined) Mesh.send('', 'presence'); }, 25000);
@@ -2763,6 +2780,21 @@ async function init() {
     es.forEach(e => { if (e.isIntersecting) { S.ui.section = e.target.id; document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === e.target.id)); } });
   }, { rootMargin: '-25% 0px -65% 0px' });
   document.querySelectorAll('main section').forEach(s => obs.observe(s));
+}
+/* index.php#rawtx=<url-encoded line(s)>  or  #voucher=<url-encoded voucher JSON>
+   fills the Sneakernet box. A fragment never reaches the server, so signed lines stay out of logs. */
+function hashLink() {
+  const m = /^#(rawtx|voucher)=(.+)$/s.exec(location.hash || '');
+  if (!m) return;
+  let text = '';
+  try { text = decodeURIComponent(m[2]).trim(); } catch (e) { return toast('Bad link', 'bad', 'The transaction in this link is damaged.'); }
+  history.replaceState(null, '', location.pathname + location.search);
+  const box = $('pasteBox'); if (!box || !text) return;
+  box.value = text;
+  window.scrollTo({ top: box.getBoundingClientRect().top + window.scrollY - 140, behavior: 'smooth' });
+  toast(m[1] === 'voucher' ? 'Voucher loaded from link' : 'Transaction loaded from link', 'info', 'Check it in the Sneakernet box, then merge.', 'Verify & merge', async () => {
+    try { await importText(box.value.trim(), true); box.value = ''; } catch (err) { toast('Merge failed', 'bad', String(err.message || err)); }
+  });
 }
 function applyPrefs() {
   document.documentElement.dataset.theme = S.prefs.theme;
