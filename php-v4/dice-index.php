@@ -20,6 +20,8 @@ const DB_FILE    = DATA_DIR . '/dice.sqlite';
 const KEY_FILE   = DATA_DIR . '/master-key.php';
 const M          = 1000;                                       // milli-weight per weight
 const DEFAULTS   = ['edge' => '1', 'min_bet' => '0.1', 'max_profit_pct' => '1', 'paused' => '0'];
+const ADMIN_MAX_FAILS = 5;                    // wrong admin passwords per IP ...
+const ADMIN_LOCK_SEC  = 900;                  // ... before that IP is locked out for 15 minutes
 
 /* ---------------------------------------------------------------- storage */
 
@@ -36,6 +38,8 @@ function db(): PDO {
     $pdo->exec('PRAGMA busy_timeout=8000');
     $pdo->exec(<<<'SQL'
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_fails (ip TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_admin_fails ON admin_fails(ip,ts);
 CREATE TABLE IF NOT EXISTS players (
   id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0, addr TEXT NOT NULL DEFAULT '',
   server_seed TEXT NOT NULL, client_seed TEXT NOT NULL, nonce INTEGER NOT NULL DEFAULT 0,
@@ -236,6 +240,18 @@ function same_origin(): bool {
     }
     return true;
 }
+/* Admin password attempt limiter: ADMIN_MAX_FAILS wrong passwords from one IP within
+   ADMIN_LOCK_SEC lock that IP out of the admin until ADMIN_LOCK_SEC after its last miss.
+   A correct login clears the count. Behind a proxy/CDN every visitor shares the proxy's IP. */
+function admin_ip(): string { return (string)($_SERVER['REMOTE_ADDR'] ?? ''); }
+function admin_wait(): int {
+    $db = db(); $db->prepare('DELETE FROM admin_fails WHERE ts<?')->execute([time() - ADMIN_LOCK_SEC]);
+    $q = $db->prepare('SELECT COUNT(*), MAX(ts) FROM admin_fails WHERE ip=?'); $q->execute([admin_ip()]);
+    [$n, $last] = $q->fetch(PDO::FETCH_NUM);
+    return (int)$n >= ADMIN_MAX_FAILS ? max(1, (int)$last + ADMIN_LOCK_SEC - time()) : 0;
+}
+function admin_fail(): void { db()->prepare('INSERT INTO admin_fails(ip,ts) VALUES(?,?)')->execute([admin_ip(), time()]); }
+function admin_clear(): void { db()->prepare('DELETE FROM admin_fails WHERE ip=?')->execute([admin_ip()]); }
 function admin_ok(): bool {
     $h = meta_get('admin_hash'); $t = (string)($_SERVER['HTTP_X_ADMIN_PASS'] ?? '');
     return $h !== null && $t !== '' && sodium_crypto_pwhash_str_verify($h, $t);
@@ -391,7 +407,9 @@ if ($action !== '') {
             out(['ok' => true]);
         }
         case 'admin': {
-            if (!admin_ok()) fail('admin password rejected', 403);
+            if ($w = admin_wait()) fail('too many wrong admin attempts from your address - try again in ' . ceil($w / 60) . ' min', 429);
+            if (!admin_ok()) { admin_fail(); fail('admin password rejected', 403); }
+            admin_clear();
             $op = (string)($in['op'] ?? '');
             if ($op === 'state') {
                 $bank = null; $bankErr = '';
